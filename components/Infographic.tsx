@@ -71,6 +71,7 @@ const Infographic: React.FC<InfographicProps> = ({
         const topicToNarrate = image.originalTopic || image.prompt;
         const factsToNarrate = image.facts && image.facts.length > 0 ? image.facts : ["Detailed visual analysis", "Key educational concepts"];
         
+        // Pass the image's selected language to the audio generation service
         const audio = await generateAudioNarration(topicToNarrate, factsToNarrate, image.language || 'English');
         setAudioData(audio);
     } catch (e) {
