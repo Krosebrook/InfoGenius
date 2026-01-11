@@ -3,42 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect, useMemo } from 'react';
-import { GeneratedImage, ComplexityLevel, VisualStyle, Language, SearchResultItem } from './types';
-import { 
-  researchTopicForPrompt, 
-  generateInfographicImage, 
-  editInfographicImage,
-} from './services/geminiService';
+import { GeneratedImage } from './types';
 import { initDB, saveImageToDB, removeImageFromDB, getAllSavedImages } from './services/db';
+import { useInfographicSession } from './hooks/useInfographicSession';
 import Infographic from './components/Infographic';
 import Loading from './components/Loading';
 import IntroScreen from './components/IntroScreen';
 import SearchResults from './components/SearchResults';
 import LibraryModal from './components/LibraryModal';
-import { Search, AlertCircle, History, GraduationCap, Palette, Microscope, Atom, Compass, Globe, Sun, Moon, Key, CreditCard, ExternalLink, DollarSign, ArrowUpDown, Newspaper, BookMarked } from 'lucide-react';
+import { Search, AlertCircle, History, GraduationCap, Palette, Microscope, Atom, Compass, Globe, Sun, Moon, Key, CreditCard, ExternalLink, DollarSign, ArrowUpDown, BookMarked } from 'lucide-react';
 
 const App: React.FC = () => {
   const [showIntro, setShowIntro] = useState(true);
-  const [topic, setTopic] = useState('');
-  const [complexityLevel, setComplexityLevel] = useState<ComplexityLevel>('High School');
-  const [visualStyle, setVisualStyle] = useState<VisualStyle>('Default');
-  const [language, setLanguage] = useState<Language>('English');
-  
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('');
-  const [loadingStep, setLoadingStep] = useState<number>(0);
-  const [loadingFacts, setLoadingFacts] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [imageHistory, setImageHistory] = useState<GeneratedImage[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(0); // 0 is the newest
-
-  const [currentSearchResults, setCurrentSearchResults] = useState<SearchResultItem[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(true);
-
-  // History Sorting and Filtering
-  const [historyFilter, setHistoryFilter] = useState('');
-  const [historySort, setHistorySort] = useState<'newest' | 'oldest' | 'az'>('newest');
 
   // API Key State
   const [hasApiKey, setHasApiKey] = useState(false);
@@ -47,6 +24,24 @@ const App: React.FC = () => {
   // Library / Favorites State
   const [savedImages, setSavedImages] = useState<GeneratedImage[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+
+  // Session Logic Hook
+  const {
+    topic, setTopic,
+    complexityLevel, setComplexityLevel,
+    visualStyle, setVisualStyle,
+    language, setLanguage,
+    isLoading, loadingMessage, loadingStep, loadingFacts, error, setError,
+    imageHistory, setImageHistory, historyIndex, setHistoryIndex,
+    currentSearchResults, setCurrentSearchResults,
+    handleGenerate, handleEdit, handleVerify, handleRefreshNews
+  } = useInfographicSession({
+      onAuthError: () => setHasApiKey(false)
+  });
+
+  // History Sorting and Filtering
+  const [historyFilter, setHistoryFilter] = useState('');
+  const [historySort, setHistorySort] = useState<'newest' | 'oldest' | 'az'>('newest');
 
   useEffect(() => {
     if (isDarkMode) {
@@ -101,121 +96,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isLoading) return;
-
-    if (!topic.trim()) {
-        setError("Please enter a topic to visualize.");
-        return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setLoadingStep(1);
-    setLoadingFacts([]);
-    setCurrentSearchResults([]);
-    setLoadingMessage(`Researching topic...`);
-
-    try {
-      const researchResult = await researchTopicForPrompt(topic, complexityLevel, visualStyle, language);
-      
-      setLoadingFacts(researchResult.facts);
-      setCurrentSearchResults(researchResult.searchResults);
-      
-      setLoadingStep(2);
-      setLoadingMessage(`Designing Infographic...`);
-      
-      let base64Data = await generateInfographicImage(researchResult.imagePrompt);
-      
-      const newImage: GeneratedImage = {
-        id: Date.now().toString(),
-        data: base64Data,
-        prompt: topic,
-        originalTopic: topic,
-        facts: researchResult.facts,
-        timestamp: Date.now(),
-        level: complexityLevel,
-        style: visualStyle,
-        language: language
-      };
-
-      setImageHistory([newImage, ...imageHistory]);
-      setHistoryIndex(0);
-    } catch (err: any) {
-      console.error(err);
-      if (err.message && (err.message.includes("Requested entity was not found") || err.message.includes("404") || err.message.includes("403"))) {
-          setError("Access denied. The selected API key does not have access to the required models. Please select a project with billing enabled.");
-          setHasApiKey(false); 
-      } else {
-          setError('The image generation service is temporarily unavailable. Please try again.');
-      }
-    } finally {
-      setIsLoading(false);
-      setLoadingStep(0);
-    }
-  };
-
-  const handleEdit = async (editPrompt: string) => {
-    if (imageHistory.length === 0) return;
-    const currentImage = imageHistory[historyIndex];
-    setIsLoading(true);
-    setError(null);
-    setLoadingStep(2);
-    setLoadingMessage(`Processing Modification: "${editPrompt}"...`);
-
-    try {
-      const base64Data = await editInfographicImage(currentImage.data, editPrompt);
-      const newImage: GeneratedImage = {
-        id: Date.now().toString(),
-        data: base64Data,
-        prompt: editPrompt,
-        originalTopic: currentImage.originalTopic || currentImage.prompt,
-        facts: currentImage.facts,
-        timestamp: Date.now(),
-        level: currentImage.level,
-        style: currentImage.style,
-        language: currentImage.language
-      };
-      setImageHistory([newImage, ...imageHistory]);
-      setHistoryIndex(0);
-    } catch (err: any) {
-      console.error(err);
-      if (err.message && (err.message.includes("Requested entity was not found") || err.message.includes("404") || err.message.includes("403"))) {
-          setError("Access denied. Please select a valid API key with billing enabled.");
-          setHasApiKey(false);
-      } else {
-          setError('Modification failed. Try a different command.');
-      }
-    } finally {
-      setIsLoading(false);
-      setLoadingStep(0);
-    }
-  };
-
-  const handleRefreshNews = async () => {
-    if (imageHistory.length === 0) return;
-    const currentTopic = imageHistory[historyIndex].prompt;
-    
-    setIsLoading(true);
-    setLoadingMessage('Fetching latest updates...');
-    setLoadingStep(1);
-    
-    try {
-      const researchResult = await researchTopicForPrompt(currentTopic, complexityLevel, visualStyle, language);
-      setCurrentSearchResults(researchResult.searchResults);
-      if (researchResult.facts.length > 0) {
-        setLoadingFacts(researchResult.facts);
-      }
-    } catch (e) {
-      console.error("Failed to refresh news", e);
-      setError("Failed to fetch latest updates.");
-    } finally {
-      setIsLoading(false);
-      setLoadingStep(0);
-    }
-  };
-
   const restoreImage = (img: GeneratedImage) => {
      // Check if image is already in history, if so switch to it
      const idx = imageHistory.findIndex(i => i.id === img.id);
@@ -225,6 +105,8 @@ const App: React.FC = () => {
          // If loaded from library and not in current session history, add it
          setImageHistory([img, ...imageHistory]);
          setHistoryIndex(0);
+         // Restore context if possible
+         if (img.originalTopic) setTopic(img.originalTopic);
      }
      setIsLibraryOpen(false);
      window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -296,7 +178,6 @@ const App: React.FC = () => {
   }, [imageHistory, historyFilter, historySort, historyIndex]);
 
   // Modal for API Key Selection...
-  // (Keep KeySelectionModal as is)
   const KeySelectionModal = () => (
     <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
         <div className="bg-white dark:bg-slate-900 border-2 border-amber-500/50 rounded-2xl shadow-2xl max-w-md w-full p-6 md:p-8 relative overflow-hidden">
@@ -495,7 +376,7 @@ const App: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Audience</label>
                             <select 
                                 value={complexityLevel} 
-                                onChange={(e) => setComplexityLevel(e.target.value as ComplexityLevel)}
+                                onChange={(e) => setComplexityLevel(e.target.value as any)}
                                 className="bg-transparent border-none text-base font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer p-0 w-full hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors truncate pr-4 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
                             >
                                 <option value="Elementary">Elementary</option>
@@ -515,7 +396,7 @@ const App: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Aesthetic</label>
                             <select 
                                 value={visualStyle} 
-                                onChange={(e) => setVisualStyle(e.target.value as VisualStyle)}
+                                onChange={(e) => setVisualStyle(e.target.value as any)}
                                 className="bg-transparent border-none text-base font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer p-0 w-full hover:text-purple-600 dark:hover:text-purple-300 transition-colors truncate pr-4 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
                             >
                                 <option value="Default">Standard Scientific</option>
@@ -539,7 +420,7 @@ const App: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Language</label>
                             <select 
                                 value={language} 
-                                onChange={(e) => setLanguage(e.target.value as Language)}
+                                onChange={(e) => setLanguage(e.target.value as any)}
                                 className="bg-transparent border-none text-base font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer p-0 w-full hover:text-green-600 dark:hover:text-green-300 transition-colors truncate pr-4 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
                             >
                                 <option value="English">English</option>
@@ -599,8 +480,10 @@ const App: React.FC = () => {
         {imageHistory.length > 0 && !isLoading && (
             <>
                 <Infographic 
+                    key={imageHistory[historyIndex].id}
                     image={imageHistory[historyIndex]} 
                     onEdit={handleEdit} 
+                    onVerify={handleVerify}
                     isEditing={isLoading}
                     onRefreshNews={handleRefreshNews}
                     onUndo={handleUndo}

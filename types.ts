@@ -20,6 +20,15 @@ export interface GeneratedImage {
   language?: Language;
   facts?: string[];
   originalTopic?: string;
+  verification?: VerificationResult;
+}
+
+export interface VerificationResult {
+  score: number; // 0-100
+  isAccurate: boolean;
+  critique: string;
+  suggestedFix?: string;
+  timestamp: number;
 }
 
 export interface SearchResultItem {

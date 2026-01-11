@@ -2,15 +2,17 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GeneratedImage } from '../types';
-import { Download, Sparkles, Edit3, Maximize2, X, ZoomIn, ZoomOut, RefreshCcw, Save, Newspaper, Undo2, Redo2, Bookmark, Check, Volume2 } from 'lucide-react';
+import { Download, Sparkles, Edit3, Maximize2, X, ZoomIn, ZoomOut, RefreshCcw, Save, Newspaper, Undo2, Redo2, Bookmark, Check, Volume2, ShieldCheck, AlertTriangle, Wand2, Info, MessageCircle, Mic } from 'lucide-react';
 import AudioPlayer from './AudioPlayer';
 import { generateAudioNarration } from '../services/geminiService';
+import LiveDiscussion from './LiveDiscussion';
 
 interface InfographicProps {
   image: GeneratedImage;
   onEdit: (prompt: string) => void;
+  onVerify: () => void;
   isEditing: boolean;
   onRefreshNews?: () => void;
   onUndo?: () => void;
@@ -23,9 +25,13 @@ interface InfographicProps {
   onToggleSave?: () => void;
 }
 
+/**
+ * Displays the generated infographic with interactive controls for editing, zooming, and audio narration.
+ */
 const Infographic: React.FC<InfographicProps> = ({ 
     image, 
     onEdit, 
+    onVerify,
     isEditing, 
     onRefreshNews,
     onUndo,
@@ -41,10 +47,23 @@ const Infographic: React.FC<InfographicProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [showEditControls, setShowEditControls] = useState(false);
+  const [showVerificationDetails, setShowVerificationDetails] = useState(false);
+  const [showLiveDiscussion, setShowLiveDiscussion] = useState(false);
   
   // Audio State
   const [audioData, setAudioData] = useState<string | null>(null);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+
+  // Reset internal state if the image ID changes.
+  // This is a defensive measure in case the parent component doesn't force a remount via key.
+  useEffect(() => {
+    setAudioData(null);
+    setIsGeneratingAudio(false);
+    setZoomLevel(1);
+    setEditPrompt('');
+    setShowVerificationDetails(false);
+    setShowLiveDiscussion(false);
+  }, [image.id]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +72,14 @@ const Infographic: React.FC<InfographicProps> = ({
     setEditPrompt('');
     setIsFullscreen(false); // Close fullscreen on edit submit to show loading state in main app
     setShowEditControls(false);
+    setShowVerificationDetails(false);
+  };
+
+  const handleApplyFix = () => {
+      if (image.verification?.suggestedFix) {
+          onEdit(image.verification.suggestedFix);
+          setShowVerificationDetails(false);
+      }
   };
 
   const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.5, 4));
@@ -62,6 +89,8 @@ const Infographic: React.FC<InfographicProps> = ({
   const handleCloseFullscreen = () => {
     setIsFullscreen(false);
     setZoomLevel(1);
+    setShowVerificationDetails(false);
+    setShowLiveDiscussion(false);
   }
 
   const handleGenerateAudio = async () => {
@@ -69,7 +98,8 @@ const Infographic: React.FC<InfographicProps> = ({
     setIsGeneratingAudio(true);
     try {
         const topicToNarrate = image.originalTopic || image.prompt;
-        const factsToNarrate = image.facts && image.facts.length > 0 ? image.facts : ["Detailed visual analysis", "Key educational concepts"];
+        // Use facts if available, otherwise fall back to empty array to let service handle it
+        const factsToNarrate = image.facts && image.facts.length > 0 ? image.facts : [];
         
         // Pass the image's selected language to the audio generation service
         const audio = await generateAudioNarration(topicToNarrate, factsToNarrate, image.language || 'English');
@@ -156,9 +186,48 @@ const Infographic: React.FC<InfographicProps> = ({
     </div>
   );
 
+  const renderVerificationModal = () => (
+      <div className="absolute top-20 right-6 z-40 w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-4">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+            <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                {image.verification?.isAccurate ? <Check className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                Accuracy Report
+            </h3>
+            <button onClick={() => setShowVerificationDetails(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X className="w-4 h-4" />
+            </button>
+        </div>
+        <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Score</span>
+                <span className={`text-lg font-bold ${
+                    (image.verification?.score || 0) > 80 ? 'text-green-500' : 
+                    (image.verification?.score || 0) > 50 ? 'text-amber-500' : 'text-red-500'
+                }`}>
+                    {image.verification?.score}/100
+                </span>
+            </div>
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-h-48 overflow-y-auto">
+                {image.verification?.critique}
+            </div>
+            {!image.verification?.isAccurate && image.verification?.suggestedFix && (
+                <button 
+                    onClick={handleApplyFix}
+                    className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
+                >
+                    <Wand2 className="w-4 h-4" /> Auto-Fix Issues
+                </button>
+            )}
+        </div>
+      </div>
+  );
+
   return (
     <div className="flex flex-col items-center w-full max-w-6xl mx-auto animate-in fade-in zoom-in duration-700 mt-8">
       
+      {/* Live Discussion Overlay */}
+      <LiveDiscussion isOpen={showLiveDiscussion} onClose={() => setShowLiveDiscussion(false)} imageData={image.data} />
+
       {/* Image Container */}
       <div className="relative group w-full bg-slate-100 dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-700/50">
         {/* Decorative Corner Markers */}
@@ -187,9 +256,47 @@ const Infographic: React.FC<InfographicProps> = ({
              />
         </div>
 
+        {/* Verification Modal (Floating) */}
+        {showVerificationDetails && renderVerificationModal()}
+
         {/* Hover Overlay for Quick Actions */}
         <div className="absolute top-6 right-6 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-30">
-           {/* Add Narration Button */}
+          {/* Live Discussion Button */}
+          <button
+            onClick={() => setShowLiveDiscussion(true)}
+            disabled={isEditing}
+            className="backdrop-blur-md p-3 rounded-xl shadow-lg transition-all border border-white/10 block hover:scale-105 active:scale-95 bg-gradient-to-br from-indigo-600 to-violet-600 text-white hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Start Live Discussion"
+          >
+            <Mic className="w-5 h-5" />
+          </button>
+
+          {/* Verification Button */}
+          <button 
+             onClick={() => {
+                 if (image.verification) {
+                     setShowVerificationDetails(!showVerificationDetails);
+                 } else {
+                     onVerify();
+                 }
+             }}
+             disabled={isEditing}
+             className={`backdrop-blur-md p-3 rounded-xl shadow-lg transition-all border border-white/10 block hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
+                ${image.verification 
+                    ? (image.verification.isAccurate ? 'bg-green-500 text-white' : 'bg-amber-500 text-white') 
+                    : 'bg-black/60 text-white hover:bg-cyan-600'
+                }
+             `}
+             title={image.verification ? "View Accuracy Report" : "Verify Accuracy"}
+          >
+             {image.verification ? (
+                 image.verification.isAccurate ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />
+             ) : (
+                 <ShieldCheck className="w-5 h-5" />
+             )}
+          </button>
+
+           {/* Audio Button */}
           <button 
             onClick={handleGenerateAudio}
             disabled={isGeneratingAudio || !!audioData}
@@ -291,6 +398,38 @@ const Infographic: React.FC<InfographicProps> = ({
                         topic={image.originalTopic || image.prompt}
                     />
 
+                    {/* Live Discussion Button Fullscreen */}
+                    <button
+                        onClick={() => setShowLiveDiscussion(true)}
+                        className="p-3 text-white rounded-full transition-all hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center border border-white/20 bg-gradient-to-br from-indigo-600 to-violet-600 hover:brightness-110"
+                        title="Start Live Discussion"
+                    >
+                        <Mic className="w-5 h-5" />
+                    </button>
+
+                    {/* Verification Button Fullscreen */}
+                    <button 
+                        onClick={() => {
+                            if (image.verification) {
+                                setShowVerificationDetails(!showVerificationDetails);
+                            } else {
+                                onVerify();
+                            }
+                        }}
+                        className={`p-3 text-white rounded-full transition-all hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center border border-white/20 
+                            ${image.verification 
+                                ? (image.verification.isAccurate ? 'bg-green-500' : 'bg-amber-500') 
+                                : 'bg-slate-700 hover:bg-cyan-600'
+                            }`}
+                        title={image.verification ? "View Accuracy Report" : "Verify Accuracy"}
+                    >
+                        {image.verification ? (
+                            image.verification.isAccurate ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />
+                        ) : (
+                            <ShieldCheck className="w-5 h-5" />
+                        )}
+                    </button>
+
                     {onToggleSave && (
                         <button 
                             onClick={onToggleSave}
@@ -351,6 +490,12 @@ const Infographic: React.FC<InfographicProps> = ({
                     `}
                 />
             </div>
+            
+            {/* Fullscreen Verification Modal */}
+            {showVerificationDetails && renderVerificationModal()}
+
+            {/* Live Discussion Overlay Fullscreen */}
+            <LiveDiscussion isOpen={showLiveDiscussion} onClose={() => setShowLiveDiscussion(false)} imageData={image.data} />
 
             {/* Sticky Edit Bar */}
             {showEditControls && (

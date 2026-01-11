@@ -17,6 +17,18 @@ function decodeBase64(base64: string): Uint8Array {
 }
 
 /**
+ * Encodes a Uint8Array into a base64 string.
+ */
+export function encodeBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
  * Decodes raw PCM data into an AudioBuffer.
  * Gemini 2.5 TTS typically returns 24kHz mono PCM.
  */
@@ -42,4 +54,19 @@ export async function decodeAudioData(
     }
   }
   return buffer;
+}
+
+/**
+ * Converts Float32 audio data (from Web Audio API) to 16-bit PCM base64 string.
+ * Used for sending microphone input to Gemini Live API.
+ */
+export function pcmTo16BitBase64(float32Array: Float32Array): string {
+  const l = float32Array.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    // Clamp values to [-1, 1] before converting
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return encodeBase64(new Uint8Array(int16.buffer));
 }

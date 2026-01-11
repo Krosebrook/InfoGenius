@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Modality } from "@google/genai";
-import { AspectRatio, ComplexityLevel, VisualStyle, ResearchResult, SearchResultItem, Language } from "../types";
+import { AspectRatio, ComplexityLevel, VisualStyle, ResearchResult, SearchResultItem, Language, VerificationResult } from "../types";
 
 // Create a fresh client for every request to ensure the latest API key from process.env.API_KEY is used
 const getAi = () => {
@@ -15,6 +15,8 @@ const TEXT_MODEL = 'gemini-3-pro-preview';
 const IMAGE_MODEL = 'gemini-3-pro-image-preview';
 const EDIT_MODEL = 'gemini-2.5-flash-image';
 const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+// Using Gemini 3 Pro for Multimodal Analysis (Vision)
+const VISION_MODEL = 'gemini-3-pro-preview';
 
 const getLevelInstruction = (level: ComplexityLevel): string => {
   switch (level) {
@@ -44,6 +46,10 @@ const getStyleInstruction = (style: VisualStyle): string => {
   }
 };
 
+/**
+ * Researches a topic to create an infographic plan.
+ * Uses Google Search Grounding to find facts.
+ */
 export const researchTopicForPrompt = async (
   topic: string, 
   level: ComplexityLevel, 
@@ -76,85 +82,163 @@ export const researchTopicForPrompt = async (
     [A highly detailed image generation prompt describing the visual composition, colors, and layout for the infographic. Do not include citations in the prompt.]
   `;
 
-  const response = await getAi().models.generateContent({
-    model: TEXT_MODEL,
-    contents: systemPrompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-    },
-  });
+  try {
+      const response = await getAi().models.generateContent({
+        model: TEXT_MODEL,
+        contents: {
+          parts: [{ text: systemPrompt }]
+        },
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
 
-  const text = response.text || "";
-  
-  // Parse Facts
-  const factsMatch = text.match(/FACTS:\s*([\s\S]*?)(?=IMAGE_PROMPT:|$)/i);
-  const factsRaw = factsMatch ? factsMatch[1].trim() : "";
-  const facts = factsRaw.split('\n')
-    .map(f => f.replace(/^-\s*/, '').trim())
-    .filter(f => f.length > 0)
-    .slice(0, 5);
+      const text = response.text || "";
+      
+      // Parse Facts with tolerant regex handling optional markdown bolding
+      const factsMatch = text.match(/(?:^|\n)\**FACTS:?\**\s*([\s\S]*?)(?=(?:^|\n)\**IMAGE_PROMPT:?\**|$)/i);
+      const factsRaw = factsMatch ? factsMatch[1].trim() : "";
+      const facts = factsRaw.split('\n')
+        .map(f => f.replace(/^-\s*/, '').trim())
+        .filter(f => f.length > 0)
+        .slice(0, 5);
 
-  // Parse Prompt
-  const promptMatch = text.match(/IMAGE_PROMPT:\s*([\s\S]*?)$/i);
-  const imagePrompt = promptMatch ? promptMatch[1].trim() : `Create a detailed infographic about ${topic}. ${levelInstr} ${styleInstr}`;
+      // Parse Prompt with tolerant regex
+      const promptMatch = text.match(/(?:^|\n)\**IMAGE_PROMPT:?\**\s*([\s\S]*?)$/i);
+      const imagePrompt = promptMatch ? promptMatch[1].trim() : `Create a detailed infographic about ${topic}. ${levelInstr} ${styleInstr}`;
 
-  // Extract Grounding (Search Results)
-  const searchResults: SearchResultItem[] = [];
-  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-  
-  if (chunks) {
-    chunks.forEach(chunk => {
-      if (chunk.web?.uri && chunk.web?.title) {
-        searchResults.push({
-          title: chunk.web.title,
-          url: chunk.web.uri
+      // Extract Grounding (Search Results)
+      const searchResults: SearchResultItem[] = [];
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      
+      if (chunks) {
+        chunks.forEach(chunk => {
+          if (chunk.web?.uri && chunk.web?.title) {
+            searchResults.push({
+              title: chunk.web.title,
+              url: chunk.web.uri
+            });
+          }
         });
       }
-    });
+
+      // Remove duplicates based on URL
+      const uniqueResults = Array.from(new Map(searchResults.map(item => [item.url, item])).values());
+
+      return {
+        imagePrompt: imagePrompt,
+        facts: facts,
+        searchResults: uniqueResults
+      };
+  } catch (error) {
+      console.error("Research failed:", error);
+      throw error;
   }
-
-  // Remove duplicates based on URL
-  const uniqueResults = Array.from(new Map(searchResults.map(item => [item.url, item])).values());
-
-  return {
-    imagePrompt: imagePrompt,
-    facts: facts,
-    searchResults: uniqueResults
-  };
 };
 
+/**
+ * Generates an infographic image based on the prompt.
+ * Uses the Gemini 3 Pro Image Preview model.
+ */
 export const generateInfographicImage = async (prompt: string): Promise<string> => {
-  // Use Gemini 3 Pro Image Preview for generation
-  const response = await getAi().models.generateContent({
-    model: IMAGE_MODEL,
-    contents: {
-      parts: [{ text: prompt }]
-    },
-    config: {
-      responseModalities: [Modality.IMAGE],
-    }
-  });
+  try {
+      const response = await getAi().models.generateContent({
+        model: IMAGE_MODEL,
+        contents: {
+          parts: [{ text: prompt }]
+        },
+        config: {
+            imageConfig: {
+                aspectRatio: "16:9",
+                imageSize: "1K"
+            }
+        }
+      });
 
-  const part = response.candidates?.[0]?.content?.parts?.[0];
-  if (part && part.inlineData && part.inlineData.data) {
-    return `data:image/png;base64,${part.inlineData.data}`;
+      // Iterate through parts to find the image, as per guidelines
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+          if (part.inlineData && part.inlineData.data) {
+              return `data:image/png;base64,${part.inlineData.data}`;
+          }
+      }
+      
+      throw new Error("No image generated in response. The model might have returned text instead.");
+  } catch (error) {
+      console.error("Image generation failed:", error);
+      throw error;
   }
-  throw new Error("Failed to generate image");
 };
 
+/**
+ * Verifies the accuracy of the generated infographic.
+ * Uses Gemini 3 Pro (Vision) to analyze the image against the facts.
+ */
 export const verifyInfographicAccuracy = async (
   imageBase64: string, 
-  topic: string,
-  level: ComplexityLevel,
-  style: VisualStyle,
-  language: Language
-): Promise<{ isAccurate: boolean; critique: string }> => {
-  
-  // Bypassing verification to send straight to image generation
-  return {
-    isAccurate: true,
-    critique: "Verification bypassed."
-  };
+  facts: string[]
+): Promise<VerificationResult> => {
+  const cleanBase64 = imageBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+
+  const prompt = `
+    Analyze this infographic image.
+    Compare it against the following facts used to generate it:
+    ${facts.map(f => `- ${f}`).join('\n')}
+
+    Your task:
+    1. Identify if the text in the image is legible and spelled correctly.
+    2. Check if the visual representation contradicts the facts (hallucinations).
+    3. Provide a brief critique.
+    4. Provide a suggested fix prompt if there are issues.
+
+    Format your response EXACTLY as this JSON:
+    {
+      "score": [number 0-100],
+      "isAccurate": [boolean],
+      "critique": "[string summary of issues or praise]",
+      "suggestedFix": "[string prompt to fix issues, or null if accurate]"
+    }
+  `;
+
+  try {
+      const response = await getAi().models.generateContent({
+        model: VISION_MODEL,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: 'image/png', data: cleanBase64 } },
+            { text: prompt }
+          ]
+        },
+        config: {
+            responseMimeType: "application/json",
+        }
+      });
+
+      const text = response.text;
+      if (!text) throw new Error("Failed to verify image");
+
+      try {
+          const result = JSON.parse(text);
+          return {
+              score: result.score,
+              isAccurate: result.isAccurate,
+              critique: result.critique,
+              suggestedFix: result.suggestedFix,
+              timestamp: Date.now()
+          };
+      } catch (e) {
+          console.error("Failed to parse verification JSON", text);
+          return {
+              score: 50,
+              isAccurate: false,
+              critique: "Failed to parse verification result. Raw response: " + text.substring(0, 100),
+              timestamp: Date.now()
+          };
+      }
+  } catch (error) {
+      console.error("Verification failed:", error);
+      throw error;
+  }
 };
 
 export const fixInfographicImage = async (currentImageBase64: string, correctionPrompt: string): Promise<string> => {
@@ -167,78 +251,97 @@ export const fixInfographicImage = async (currentImageBase64: string, correction
     Ensure the design is clean and any text is large and legible.
   `;
 
-  const response = await getAi().models.generateContent({
-    model: EDIT_MODEL,
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
-        { text: prompt }
-      ]
-    },
-    config: {
-      responseModalities: [Modality.IMAGE],
-    }
-  });
+  try {
+      const response = await getAi().models.generateContent({
+        model: EDIT_MODEL,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
+            { text: prompt }
+          ]
+        }
+        // Removed responseModalities for better compatibility with edit models unless strictly required
+      });
 
-  const part = response.candidates?.[0]?.content?.parts?.[0];
-  if (part && part.inlineData && part.inlineData.data) {
-    return `data:image/png;base64,${part.inlineData.data}`;
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+          if (part.inlineData && part.inlineData.data) {
+              return `data:image/png;base64,${part.inlineData.data}`;
+          }
+      }
+      throw new Error("Failed to fix image");
+  } catch (error) {
+      console.error("Fix image failed:", error);
+      throw error;
   }
-  throw new Error("Failed to fix image");
 };
 
 export const editInfographicImage = async (currentImageBase64: string, editInstruction: string): Promise<string> => {
   const cleanBase64 = currentImageBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
   
-  const response = await getAi().models.generateContent({
-    model: EDIT_MODEL,
-    contents: {
-      parts: [
-         { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
-         { text: editInstruction }
-      ]
-    },
-    config: {
-      responseModalities: [Modality.IMAGE],
-    }
-  });
-  
-   const part = response.candidates?.[0]?.content?.parts?.[0];
-  if (part && part.inlineData && part.inlineData.data) {
-    return `data:image/png;base64,${part.inlineData.data}`;
+  try {
+      const response = await getAi().models.generateContent({
+        model: EDIT_MODEL,
+        contents: {
+          parts: [
+             { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
+             { text: editInstruction }
+          ]
+        }
+        // Removed responseModalities
+      });
+      
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+          if (part.inlineData && part.inlineData.data) {
+              return `data:image/png;base64,${part.inlineData.data}`;
+          }
+      }
+      throw new Error("Failed to edit image");
+  } catch (error) {
+      console.error("Edit image failed:", error);
+      throw error;
   }
-  throw new Error("Failed to edit image");
 };
 
+/**
+ * Generates an audio narration summary of the topic.
+ * Uses Gemini 2.5 Flash TTS.
+ */
 export const generateAudioNarration = async (topic: string, facts: string[], language: Language): Promise<string> => {
-  // Construct a prompt that asks the model to narrate the facts in an educational tone
-  const prompt = `
-    Narrate a short, engaging, and educational summary about "${topic}".
-    Audience Language: ${language}.
-    Base the narration on these key facts, but weave them into a coherent story:
-    ${facts.map(f => `- ${f}`).join('\n')}
-    
-    Keep it under 30 seconds. Speak clearly and enthusiastically like a science documentary narrator.
-  `;
-
-  const response = await getAi().models.generateContent({
-    model: TTS_MODEL,
-    contents: {
-      parts: [{ text: prompt }]
-    },
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Fenrir' } // 'Fenrir' is a deep, authoritative narrator voice
-        }
-      }
-    }
-  });
-
-  const part = response.candidates?.[0]?.content?.parts?.[0];
-  if (part && part.inlineData && part.inlineData.data) {
-    return part.inlineData.data; // Return base64 PCM data
+  let contentPrompt = `Narrate a short, engaging, and educational summary about "${topic}".\nAudience Language: ${language}.\n`;
+  
+  if (facts && facts.length > 0) {
+    contentPrompt += `Base the narration on these key facts, but weave them into a coherent story:\n${facts.map(f => `- ${f}`).join('\n')}\n`;
+  } else {
+    contentPrompt += `Provide a concise overview suitable for a general audience.\n`;
   }
-  throw new Error("Failed to generate audio");
+  
+  contentPrompt += `Keep it under 30 seconds. Speak clearly and enthusiastically like a science documentary narrator.`;
+
+  try {
+      const response = await getAi().models.generateContent({
+        model: TTS_MODEL,
+        contents: {
+          parts: [{ text: contentPrompt }]
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Fenrir' } // 'Fenrir' is a deep, authoritative narrator voice
+            }
+          }
+        }
+      });
+
+      const part = response.candidates?.[0]?.content?.parts?.[0];
+      if (part && part.inlineData && part.inlineData.data) {
+        return part.inlineData.data; // Return base64 PCM data
+      }
+      throw new Error("Failed to generate audio");
+  } catch (error) {
+      console.error("Audio generation failed:", error);
+      throw error;
+  }
 };
