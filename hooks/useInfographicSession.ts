@@ -1,14 +1,16 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useCallback } from 'react';
-import { GeneratedImage, ComplexityLevel, VisualStyle, Language, SearchResultItem, VerificationResult } from '../types';
+import { GeneratedImage, ComplexityLevel, VisualStyle, Language, SearchResultItem, VerificationResult, LatLng } from '../types';
 import { 
   researchTopicForPrompt, 
   generateInfographicImage, 
   editInfographicImage, 
-  verifyInfographicAccuracy 
+  verifyInfographicAccuracy,
+  generateCinematicSummary
 } from '../services/geminiService';
 
 interface UseInfographicSessionProps {
@@ -28,7 +30,7 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
   const [error, setError] = useState<string | null>(null);
   
   const [imageHistory, setImageHistory] = useState<GeneratedImage[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(0); // 0 is the newest
+  const [historyIndex, setHistoryIndex] = useState(0); 
   const [currentSearchResults, setCurrentSearchResults] = useState<SearchResultItem[]>([]);
 
   const addToHistory = (image: GeneratedImage) => {
@@ -36,10 +38,21 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
       setHistoryIndex(0);
   };
 
+  const getUserLocation = (): Promise<LatLng | undefined> => {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(undefined);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+            () => resolve(undefined),
+            { timeout: 5000 }
+        );
+    });
+  };
+
   const handleError = (err: any) => {
       console.error(err);
       if (err.message && (err.message.includes("Requested entity was not found") || err.message.includes("404") || err.message.includes("403"))) {
-          setError("Access denied. The selected API key does not have access to the required models. Please select a project with billing enabled.");
+          setError("Access denied. Ensure you have a paid API key selected for these models.");
           onAuthError();
       } else {
           setError(err.message || 'An unexpected error occurred.');
@@ -55,16 +68,17 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
     setLoadingStep(1);
     setLoadingFacts([]);
     setCurrentSearchResults([]);
-    setLoadingMessage(`Researching topic...`);
+    setLoadingMessage(`Consulting Knowledge Base...`);
 
     try {
-      const researchResult = await researchTopicForPrompt(topic, complexityLevel, visualStyle, language);
+      const location = await getUserLocation();
+      const researchResult = await researchTopicForPrompt(topic, complexityLevel, visualStyle, language, location);
       
       setLoadingFacts(researchResult.facts);
       setCurrentSearchResults(researchResult.searchResults);
       
       setLoadingStep(2);
-      setLoadingMessage(`Designing Infographic...`);
+      setLoadingMessage(`Synthesizing Visual Layout...`);
       
       let base64Data = await generateInfographicImage(researchResult.imagePrompt);
       
@@ -89,13 +103,39 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
     }
   };
 
+  const handleAnimate = async () => {
+    if (imageHistory.length === 0) return;
+    const currentImage = imageHistory[historyIndex];
+    if (currentImage.videoUri) return; // Already animated
+
+    setIsLoading(true);
+    setError(null);
+    setLoadingStep(3); // Specialized video step
+    setLoadingMessage(`Cinematic Animation Processing... (May take 1-2 mins)`);
+
+    try {
+        const videoUri = await generateCinematicSummary(currentImage.originalTopic || currentImage.prompt, currentImage.data);
+        
+        // Update history item with video
+        const updatedImage = { ...currentImage, videoUri };
+        const newHistory = [...imageHistory];
+        newHistory[historyIndex] = updatedImage;
+        setImageHistory(newHistory);
+    } catch (err: any) {
+        handleError(err);
+    } finally {
+        setIsLoading(false);
+        setLoadingStep(0);
+    }
+  };
+
   const handleEdit = async (editPrompt: string) => {
     if (imageHistory.length === 0) return;
     const currentImage = imageHistory[historyIndex];
     setIsLoading(true);
     setError(null);
     setLoadingStep(2);
-    setLoadingMessage(`Processing Modification: "${editPrompt}"...`);
+    setLoadingMessage(`Refining Canvas: "${editPrompt}"...`);
 
     try {
       const base64Data = await editInfographicImage(currentImage.data, editPrompt);
@@ -105,7 +145,8 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
         data: base64Data,
         prompt: editPrompt,
         timestamp: Date.now(),
-        verification: undefined // Reset verification on edit
+        verification: undefined,
+        videoUri: undefined // Reset video on edit
       };
       addToHistory(newImage);
     } catch (err: any) {
@@ -119,18 +160,14 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
   const handleVerify = async () => {
     if (imageHistory.length === 0) return;
     const currentImage = imageHistory[historyIndex];
-    
-    // If no facts (e.g. loaded from old history or direct creation), can't verify accurately
     const facts = currentImage.facts || ["General knowledge about " + currentImage.prompt];
 
     setIsLoading(true);
-    setLoadingMessage("Analyzing accuracy...");
+    setLoadingMessage("Validating Visual Data...");
     setLoadingStep(2);
 
     try {
         const result: VerificationResult = await verifyInfographicAccuracy(currentImage.data, facts);
-        
-        // Update the current image in history with the verification result
         const updatedImage = { ...currentImage, verification: result };
         const newHistory = [...imageHistory];
         newHistory[historyIndex] = updatedImage;
@@ -146,23 +183,15 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
   const handleRefreshNews = async () => {
     if (imageHistory.length === 0) return;
     const currentTopic = imageHistory[historyIndex].prompt;
-    
     setIsLoading(true);
-    setLoadingMessage('Fetching latest updates...');
+    setLoadingMessage('Fetching Geographic & Search Updates...');
     setLoadingStep(1);
-    
     try {
-      const researchResult = await researchTopicForPrompt(currentTopic, complexityLevel, visualStyle, language);
+      const location = await getUserLocation();
+      const researchResult = await researchTopicForPrompt(currentTopic, complexityLevel, visualStyle, language, location);
       setCurrentSearchResults(researchResult.searchResults);
-      if (researchResult.facts.length > 0) {
-        setLoadingFacts(researchResult.facts);
-      }
-    } catch (err: any) {
-      handleError(err);
-    } finally {
-      setIsLoading(false);
-      setLoadingStep(0);
-    }
+      if (researchResult.facts.length > 0) setLoadingFacts(researchResult.facts);
+    } catch (err: any) { handleError(err); } finally { setIsLoading(false); setLoadingStep(0); }
   };
 
   return {
@@ -173,6 +202,6 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
     isLoading, loadingMessage, loadingStep, loadingFacts, error, setError,
     imageHistory, setImageHistory, historyIndex, setHistoryIndex,
     currentSearchResults, setCurrentSearchResults,
-    handleGenerate, handleEdit, handleVerify, handleRefreshNews
+    handleGenerate, handleAnimate, handleEdit, handleVerify, handleRefreshNews
   };
 };

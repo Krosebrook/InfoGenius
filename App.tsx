@@ -1,8 +1,9 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { GeneratedImage } from './types';
 import { initDB, saveImageToDB, removeImageFromDB, getAllSavedImages } from './services/db';
 import { useInfographicSession } from './hooks/useInfographicSession';
@@ -11,21 +12,27 @@ import Loading from './components/Loading';
 import IntroScreen from './components/IntroScreen';
 import SearchResults from './components/SearchResults';
 import LibraryModal from './components/LibraryModal';
-import { Search, AlertCircle, History, GraduationCap, Palette, Microscope, Atom, Compass, Globe, Sun, Moon, Key, CreditCard, ExternalLink, DollarSign, ArrowUpDown, BookMarked } from 'lucide-react';
+import TutorialOverlay from './components/TutorialOverlay';
+import { transcribeAndParseIntent } from './services/geminiService';
+import { Search, AlertCircle, GraduationCap, Palette, Atom, Sun, Moon, BookMarked, Mic, MicOff, Loader2, Sparkles, Wand2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [showIntro, setShowIntro] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(true);
-
-  // API Key State
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('infogenius_theme');
+    return saved ? saved === 'dark' : true;
+  });
   const [hasApiKey, setHasApiKey] = useState(false);
   const [checkingKey, setCheckingKey] = useState(true);
-
-  // Library / Favorites State
   const [savedImages, setSavedImages] = useState<GeneratedImage[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  
+  // Voice Input State
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  // Session Logic Hook
   const {
     topic, setTopic,
     complexityLevel, setComplexityLevel,
@@ -34,535 +41,306 @@ const App: React.FC = () => {
     isLoading, loadingMessage, loadingStep, loadingFacts, error, setError,
     imageHistory, setImageHistory, historyIndex, setHistoryIndex,
     currentSearchResults, setCurrentSearchResults,
-    handleGenerate, handleEdit, handleVerify, handleRefreshNews
+    handleGenerate, handleAnimate, handleEdit, handleVerify, handleRefreshNews
   } = useInfographicSession({
       onAuthError: () => setHasApiKey(false)
   });
 
-  // History Sorting and Filtering
-  const [historyFilter, setHistoryFilter] = useState('');
-  const [historySort, setHistorySort] = useState<'newest' | 'oldest' | 'az'>('newest');
-
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    localStorage.setItem('infogenius_theme', isDarkMode ? 'dark' : 'light');
+    if (isDarkMode) { document.documentElement.classList.add('dark'); } 
+    else { document.documentElement.classList.remove('dark'); }
   }, [isDarkMode]);
 
-  // Check for API Key on Mount & Init DB
   useEffect(() => {
     const checkKey = async () => {
       try {
         if (window.aistudio && window.aistudio.hasSelectedApiKey) {
           const hasKey = await window.aistudio.hasSelectedApiKey();
           setHasApiKey(hasKey);
-        } else {
-          setHasApiKey(true);
-        }
-      } catch (e) {
-        console.error("Error checking API key:", e);
-      } finally {
-        setCheckingKey(false);
-      }
+        } else { setHasApiKey(true); }
+      } catch (e) { console.error(e); } finally { setCheckingKey(false); }
     };
-    
     checkKey();
-
-    // Init Database
+    
     const setupDB = async () => {
-        try {
-            await initDB();
-            const saved = await getAllSavedImages();
-            setSavedImages(saved);
-        } catch (e) {
-            console.error("Failed to initialize DB:", e);
-        }
+        try { 
+          await initDB(); 
+          const saved = await getAllSavedImages(); 
+          setSavedImages(saved); 
+          
+          // Check for tutorial completion
+          const tutorialDone = localStorage.getItem('infogenius_tutorial_done');
+          if (!tutorialDone) setShowTutorial(true);
+        } 
+        catch (e) { console.error(e); }
     };
     setupDB();
-
   }, []);
 
   const handleSelectKey = async () => {
     if (window.aistudio && window.aistudio.openSelectKey) {
-      try {
-        await window.aistudio.openSelectKey();
-        setHasApiKey(true);
-        setError(null);
-      } catch (e) {
-        console.error("Failed to open key selector:", e);
-      }
+      try { await window.aistudio.openSelectKey(); setHasApiKey(true); setError(null); } 
+      catch (e) { console.error(e); }
     }
   };
 
   const restoreImage = (img: GeneratedImage) => {
-     // Check if image is already in history, if so switch to it
      const idx = imageHistory.findIndex(i => i.id === img.id);
-     if (idx !== -1) {
-         setHistoryIndex(idx);
-     } else {
-         // If loaded from library and not in current session history, add it
-         setImageHistory([img, ...imageHistory]);
-         setHistoryIndex(0);
-         // Restore context if possible
-         if (img.originalTopic) setTopic(img.originalTopic);
-     }
+     if (idx !== -1) { setHistoryIndex(idx); } 
+     else { setImageHistory([img, ...imageHistory]); setHistoryIndex(0); if (img.originalTopic) setTopic(img.originalTopic); }
      setIsLibraryOpen(false);
      window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleUndo = () => {
-      if (historyIndex < imageHistory.length - 1) {
-          setHistoryIndex(prev => prev + 1);
-      }
-  };
-
-  const handleRedo = () => {
-      if (historyIndex > 0) {
-          setHistoryIndex(prev => prev - 1);
-      }
   };
 
   const handleToggleSave = async () => {
       if (imageHistory.length === 0) return;
       const currentImage = imageHistory[historyIndex];
       const isSaved = savedImages.some(img => img.id === currentImage.id);
-
       try {
-          if (isSaved) {
-              await removeImageFromDB(currentImage.id);
-              setSavedImages(savedImages.filter(img => img.id !== currentImage.id));
-          } else {
-              await saveImageToDB(currentImage);
-              setSavedImages([...savedImages, currentImage]);
-          }
-      } catch (e) {
-          console.error("Failed to toggle save", e);
-          setError("Failed to update library. Your browser storage might be full.");
-      }
+          if (isSaved) { await removeImageFromDB(currentImage.id); setSavedImages(savedImages.filter(img => img.id !== currentImage.id)); } 
+          else { await saveImageToDB(currentImage); setSavedImages([...savedImages, currentImage]); }
+      } catch (e) { setError("Library update failed."); }
   };
 
   const handleDeleteFromLibrary = async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      try {
-          await removeImageFromDB(id);
-          setSavedImages(savedImages.filter(img => img.id !== id));
-      } catch (e) {
-          console.error("Failed to delete", e);
-      }
+      try { await removeImageFromDB(id); setSavedImages(savedImages.filter(img => img.id !== id)); } catch (e) {}
   };
 
-  // Filter and Sort History (Excluding the currently active image)
-  const processedHistory = useMemo(() => {
-    if (imageHistory.length <= 1) return [];
-    
-    // Filter out the currently viewed image by index
-    let processed = imageHistory.filter((_, idx) => idx !== historyIndex);
-    
-    // Filter
-    if (historyFilter.trim()) {
-      const term = historyFilter.toLowerCase();
-      processed = processed.filter(img => img.prompt.toLowerCase().includes(term));
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setIsLoadingVoice(true);
+        try {
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Audio = (reader.result as string).split(',')[1];
+            const intent = await transcribeAndParseIntent(base64Audio);
+            if (intent.topic) setTopic(intent.topic);
+            if (intent.level) setComplexityLevel(intent.level as any);
+            setError(null);
+          };
+        } catch (err: any) {
+          setError("Failed to parse voice command.");
+        } finally {
+          setIsLoadingVoice(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      setError("Microphone access denied.");
     }
-    
-    // Sort
-    processed.sort((a, b) => {
-      if (historySort === 'newest') return b.timestamp - a.timestamp;
-      if (historySort === 'oldest') return a.timestamp - b.timestamp;
-      if (historySort === 'az') return a.prompt.localeCompare(b.prompt);
-      return 0;
-    });
-    
-    return processed;
-  }, [imageHistory, historyFilter, historySort, historyIndex]);
+  };
 
-  // Modal for API Key Selection...
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+    }
+  };
+
+  const [isLoadingVoice, setIsLoadingVoice] = useState(false);
+
+  const handleFinishTutorial = () => {
+    localStorage.setItem('infogenius_tutorial_done', 'true');
+    setShowTutorial(false);
+  };
+
   const KeySelectionModal = () => (
-    <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
-        <div className="bg-white dark:bg-slate-900 border-2 border-amber-500/50 rounded-2xl shadow-2xl max-w-md w-full p-6 md:p-8 relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500"></div>
-            
-            <div className="flex flex-col items-center text-center space-y-6">
-                <div className="relative">
-                    <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center text-amber-600 dark:text-amber-400 mb-2 border-4 border-white dark:border-slate-900 shadow-lg">
-                        <CreditCard className="w-8 h-8" />
-                    </div>
-                    <div className="absolute -bottom-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm border-2 border-white dark:border-slate-900 uppercase tracking-wide">
-                        Paid App
-                    </div>
-                </div>
-                
-                <div className="space-y-3">
-                    <h2 className="text-2xl font-display font-bold text-slate-900 dark:text-white">
-                        Paid API Key Required
-                    </h2>
-                    <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed font-medium">
-                        This application uses premium Gemini 3 Pro models which are not available on the free tier.
-                    </p>
-                    <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                        You must select a Google Cloud Project with <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1 py-0.5 rounded">Billing Enabled</span> to proceed.
-                    </p>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 w-full text-left">
-                    <div className="flex items-start gap-3">
-                         <div className="p-1.5 bg-amber-100 dark:bg-amber-900/30 rounded-lg text-amber-600 dark:text-amber-400 shrink-0">
-                            <DollarSign className="w-4 h-4" />
-                         </div>
-                         <div className="space-y-1">
-                            <p className="text-xs font-bold text-slate-900 dark:text-slate-200">Billing Required</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Standard API keys will fail. Please ensure you have set up billing in Google AI Studio.
-                            </p>
-                             <a 
-                                href="https://ai.google.dev/gemini-api/docs/billing" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline mt-1"
-                            >
-                                View Billing Documentation <ExternalLink className="w-3 h-3" />
-                            </a>
-                         </div>
-                    </div>
-                </div>
-
-                <button 
-                    onClick={handleSelectKey}
-                    className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl font-bold shadow-lg shadow-amber-500/20 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2"
-                >
-                    <Key className="w-4 h-4" />
-                    <span>Select Paid API Key</span>
-                </button>
-            </div>
+    <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-slate-900 border-2 border-amber-500/50 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center space-y-6">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Paid API Key Required</h2>
+            <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">This app uses Gemini 3 Pro and Veo models which require a Google Cloud Project with <strong>Billing Enabled</strong>.</p>
+            <button onClick={handleSelectKey} className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold shadow-lg">Select Paid API Key</button>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="block text-xs text-cyan-500 underline">Billing Documentation</a>
         </div>
     </div>
   );
 
   return (
     <>
-    {/* Block usage if key is missing */}
     {!checkingKey && !hasApiKey && <KeySelectionModal />}
-
-    <LibraryModal 
-        isOpen={isLibraryOpen}
-        onClose={() => setIsLibraryOpen(false)}
-        images={savedImages}
-        onSelect={restoreImage}
-        onDelete={handleDeleteFromLibrary}
-    />
-
-    {showIntro ? (
-      <IntroScreen onComplete={() => setShowIntro(false)} />
-    ) : (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans selection:bg-cyan-500 selection:text-white pb-20 relative overflow-x-hidden animate-in fade-in duration-1000 transition-colors">
+    <LibraryModal isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} images={savedImages} onSelect={restoreImage} onDelete={handleDeleteFromLibrary} />
+    {showTutorial && <TutorialOverlay onComplete={handleFinishTutorial} />}
+    
+    {showIntro ? <IntroScreen onComplete={() => setShowIntro(false)} /> : (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans pb-20 relative transition-colors">
+      <div className="fixed inset-0 bg-gradient-to-b from-indigo-100 to-white dark:from-slate-900 dark:to-slate-950 z-0"></div>
       
-      {/* Background Elements */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-100 via-slate-50 to-white dark:from-indigo-900 dark:via-slate-950 dark:to-black z-0 transition-colors"></div>
-      <div className="fixed inset-0 opacity-5 dark:opacity-20 z-0 pointer-events-none" style={{
-          backgroundImage: `radial-gradient(currentColor 1px, transparent 1px)`,
-          backgroundSize: '40px 40px'
-      }}></div>
-
-      {/* Navbar */}
-      <header className="border-b border-slate-200 dark:border-white/10 sticky top-0 z-50 backdrop-blur-md bg-white/70 dark:bg-slate-950/60 transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 md:h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3 md:gap-4 group">
-            <div className="relative scale-90 md:scale-100">
-                <div className="absolute inset-0 bg-cyan-500 blur-lg opacity-20 dark:opacity-40 group-hover:opacity-60 transition-opacity"></div>
-                <div className="bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 relative z-10 shadow-sm dark:shadow-none">
-                   <Atom className="w-6 h-6 text-cyan-600 dark:text-cyan-400 animate-[spin_10s_linear_infinite]" />
-                </div>
+      <header className="border-b border-slate-200 dark:border-white/10 sticky top-0 z-50 backdrop-blur-md bg-white/70 dark:bg-slate-950/60 transition-all duration-500">
+        <div className="max-w-7xl mx-auto px-4 h-16 md:h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-cyan-600 rounded-lg shadow-lg shadow-cyan-500/20">
+              <Atom className="w-6 h-6 text-white animate-spin-slow" />
             </div>
-            <div className="flex flex-col">
-                <span className="font-display font-bold text-lg md:text-2xl tracking-tight text-slate-900 dark:text-white leading-none">
-                InfoGenius <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-indigo-600 dark:from-cyan-400 dark:to-amber-400">Vision</span>
-                </span>
-                <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 font-medium">Visual Knowledge Engine</span>
-            </div>
+            <span className="font-display font-bold text-lg md:text-2xl tracking-tight">InfoGenius <span className="text-cyan-600 dark:text-cyan-400">Vision</span></span>
           </div>
-
-          <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setIsLibraryOpen(true)}
-                className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-bold transition-colors border border-amber-200 dark:border-amber-700/30"
-                title="View Saved Library"
-              >
-                <BookMarked className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-3">
+              <button id="step-library" onClick={() => setIsLibraryOpen(true)} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-200 dark:border-amber-700/30 hover:brightness-110 transition-all">
+                <BookMarked className="w-4 h-4" />
                 <span>Library ({savedImages.length})</span>
               </button>
-
-              <button 
-                onClick={handleSelectKey}
-                className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 text-xs font-medium transition-colors border border-slate-200 dark:border-white/10"
-                title="Change API Key"
-              >
-                <Key className="w-3.5 h-3.5" />
-                <span>API Key</span>
-              </button>
-
-              <button 
-                onClick={() => setIsDarkMode(!isDarkMode)}
-                className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors border border-slate-200 dark:border-white/10 shadow-sm"
-                title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-              >
-                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-              </button>
+              
+              {/* Persistent Animated Theme Toggle */}
+              <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl flex items-center gap-1 border border-slate-200 dark:border-white/10">
+                <button 
+                  onClick={() => setIsDarkMode(false)} 
+                  className={`p-1.5 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-amber-500 shadow-sm' : 'text-slate-400'}`}
+                >
+                  <Sun className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => setIsDarkMode(true)} 
+                  className={`p-1.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-700 text-cyan-400 shadow-sm' : 'text-slate-500'}`}
+                >
+                  <Moon className="w-4 h-4" />
+                </button>
+              </div>
           </div>
         </div>
       </header>
 
       <main className="px-3 sm:px-6 py-4 md:py-8 relative z-10">
-        
-        <div className={`max-w-6xl mx-auto transition-all duration-500 ${imageHistory.length > 0 ? 'mb-4 md:mb-8' : 'min-h-[50vh] md:min-h-[70vh] flex flex-col justify-center'}`}>
-          
+        <div className={`max-w-6xl mx-auto transition-all ${imageHistory.length > 0 ? 'mb-8' : 'min-h-[75vh] flex flex-col justify-center'}`}>
           {!imageHistory.length && (
-            <div className="text-center mb-6 md:mb-16 space-y-3 md:space-y-8 animate-in slide-in-from-bottom-8 duration-700 fade-in">
-              <div className="inline-flex items-center justify-center gap-2 px-4 py-1.5 rounded-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-amber-600 dark:text-amber-300 text-[10px] md:text-xs font-bold tracking-widest uppercase shadow-sm dark:shadow-[0_0_20px_rgba(251,191,36,0.1)] backdrop-blur-sm">
-                <Compass className="w-3 h-3 md:w-4 md:h-4" /> Explore vast subjects like history, science, and more.
+            <div className="text-center mb-16 space-y-10 animate-in fade-in slide-in-from-bottom-12 duration-1000">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 text-[10px] font-bold uppercase tracking-widest border border-cyan-500/20 mb-4">
+                <Sparkles className="w-3 h-3" /> AI-Grounded Visual Research
               </div>
-              <h1 className="text-3xl sm:text-5xl md:text-8xl font-display font-bold text-slate-900 dark:text-white tracking-tight leading-[0.95] md:leading-[0.9]">
-                Visualize <br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 dark:from-cyan-400 dark:via-indigo-400 dark:to-purple-400">The Unknown.</span>
+              <h1 className="text-4xl sm:text-6xl md:text-8xl font-display font-bold tracking-tighter leading-[0.85]">
+                Visualize any <br/>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 via-blue-600 to-purple-600 dark:from-cyan-400 dark:to-indigo-400 drop-shadow-sm">Complex Knowledge.</span>
               </h1>
-              <p className="text-sm md:text-2xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto font-light leading-relaxed px-4">
-                Generate diagrams and infographics powered by Google search grounding.
+              <p className="text-sm md:text-2xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto font-light leading-relaxed">
+                Transform abstract data into interactive diagrams, grounded maps, and cinematic summaries powered by Gemini 3 and Veo AI.
               </p>
-              
-              {/* Library CTA for mobile/when empty */}
-              {savedImages.length > 0 && (
-                 <div className="md:hidden mt-4">
-                    <button 
-                        onClick={() => setIsLibraryOpen(true)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-sm font-bold border border-amber-500/20"
-                    >
-                        <BookMarked className="w-4 h-4" />
-                        Access Personal Library ({savedImages.length})
-                    </button>
-                 </div>
-              )}
             </div>
           )}
-
-          {/* Search Form */}
-          <form onSubmit={handleGenerate} className={`relative z-20 transition-all duration-300 ${isLoading ? 'opacity-50 pointer-events-none scale-95 blur-sm' : 'scale-100'}`}>
-            
-            <div className="relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-amber-500 rounded-3xl opacity-10 dark:opacity-20 group-hover:opacity-30 dark:group-hover:opacity-40 transition duration-500 blur-xl"></div>
+          
+          <form id="step-search" onSubmit={handleGenerate} className={`relative z-20 transition-all ${isLoading ? 'opacity-50 pointer-events-none blur-sm' : ''}`}>
+            <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-slate-200 dark:border-white/10 p-3 rounded-[2.5rem] shadow-2xl group transition-all hover:shadow-cyan-500/10">
+                <div className="relative flex items-center">
+                    <div className="absolute left-8 flex items-center gap-3">
+                      <Search className="w-7 h-7 text-slate-400 transition-colors group-focus-within:text-cyan-500" />
+                    </div>
+                    <input 
+                      type="text" 
+                      value={topic} 
+                      onChange={(e) => setTopic(e.target.value)} 
+                      placeholder="Enter a topic (e.g. History of Roman Aqueducts)" 
+                      className="w-full pl-20 pr-16 py-6 md:py-8 bg-transparent border-none outline-none text-lg md:text-3xl font-medium text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600" 
+                    />
+                    <div className="absolute right-6 flex items-center gap-3">
+                       {isLoadingVoice ? (
+                         <div className="p-3">
+                           <Loader2 className="w-7 h-7 animate-spin text-cyan-500" />
+                         </div>
+                       ) : (
+                         <button 
+                            id="step-mic"
+                            type="button" 
+                            onClick={isRecording ? handleStopRecording : handleStartRecording} 
+                            className={`p-4 rounded-[1.5rem] transition-all relative ${isRecording ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                            title={isRecording ? "Stop Recording" : "Record Voice Command"}
+                          >
+                            {isRecording && <span className="absolute inset-0 rounded-[1.5rem] animate-ping bg-red-500/30"></span>}
+                            {isRecording ? <MicOff className="w-6 h-6 relative z-10" /> : <Mic className="w-6 h-6" />}
+                          </button>
+                       )}
+                    </div>
+                </div>
                 
-                <div className="relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200 dark:border-white/10 p-2 rounded-3xl shadow-2xl">
-                    
-                    {/* Main Input */}
-                    <div className="relative flex items-center">
-                        <Search className="absolute left-4 md:left-6 w-5 h-5 md:w-6 md:h-6 text-slate-400 group-focus-within:text-cyan-500 transition-colors" />
-                        <input
-                            type="text"
-                            value={topic}
-                            onChange={(e) => setTopic(e.target.value)}
-                            placeholder="What do you want to visualize?"
-                            className="w-full pl-12 md:pl-16 pr-4 md:pr-6 py-3 md:py-6 bg-transparent border-none outline-none text-base md:text-2xl placeholder:text-slate-400 font-medium text-slate-900 dark:text-white"
-                        />
-                    </div>
-
-                    {/* Controls Bar */}
-                    <div className="flex flex-col md:flex-row gap-2 p-2 mt-2">
-                    
-                    {/* Level Selector */}
-                    <div className="flex-1 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-200 dark:border-white/5 px-4 py-3 flex items-center gap-3 hover:border-cyan-500/30 transition-colors relative overflow-hidden group/item">
-                        <div className="p-2 bg-white dark:bg-slate-800 rounded-lg text-cyan-600 dark:text-cyan-400 shrink-0 shadow-sm">
-                            <GraduationCap className="w-4 h-4" />
+                <div id="step-config" className="flex flex-col md:flex-row gap-3 p-3 mt-3">
+                    <div className="flex-1 bg-slate-50 dark:bg-slate-950/40 rounded-[1.5rem] border border-slate-100 dark:border-white/5 px-6 py-4 flex items-center gap-4 transition-all hover:bg-white dark:hover:bg-slate-850 hover:shadow-sm">
+                        <div className="p-2 rounded-xl bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600">
+                          <GraduationCap className="w-5 h-5" />
                         </div>
-                        <div className="flex flex-col z-10 w-full overflow-hidden">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Audience</label>
-                            <select 
-                                value={complexityLevel} 
-                                onChange={(e) => setComplexityLevel(e.target.value as any)}
-                                className="bg-transparent border-none text-base font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer p-0 w-full hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors truncate pr-4 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
-                            >
-                                <option value="Elementary">Elementary</option>
-                                <option value="High School">High School</option>
-                                <option value="College">College</option>
-                                <option value="Expert">Expert</option>
-                            </select>
+                        <div className="flex flex-col w-full">
+                          <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Target Audience</label>
+                          <select value={complexityLevel} onChange={(e) => setComplexityLevel(e.target.value as any)} className="bg-transparent border-none text-base font-bold w-full outline-none text-slate-800 dark:text-white cursor-pointer">
+                            <option value="Elementary">Elementary (Ages 6-11)</option>
+                            <option value="High School">High School (Ages 12-18)</option>
+                            <option value="College">University Student</option>
+                            <option value="Expert">Technical Expert</option>
+                          </select>
                         </div>
                     </div>
-
-                    {/* Style Selector */}
-                    <div className="flex-1 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-200 dark:border-white/5 px-4 py-3 flex items-center gap-3 hover:border-purple-500/30 transition-colors relative overflow-hidden group/item">
-                         <div className="p-2 bg-white dark:bg-slate-800 rounded-lg text-purple-600 dark:text-purple-400 shrink-0 shadow-sm">
-                            <Palette className="w-4 h-4" />
+                    <div className="flex-1 bg-slate-50 dark:bg-slate-950/40 rounded-[1.5rem] border border-slate-100 dark:border-white/5 px-6 py-4 flex items-center gap-4 transition-all hover:bg-white dark:hover:bg-slate-850 hover:shadow-sm">
+                        <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600">
+                          <Palette className="w-5 h-5" />
                         </div>
-                        <div className="flex flex-col z-10 w-full overflow-hidden">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Aesthetic</label>
-                            <select 
-                                value={visualStyle} 
-                                onChange={(e) => setVisualStyle(e.target.value as any)}
-                                className="bg-transparent border-none text-base font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer p-0 w-full hover:text-purple-600 dark:hover:text-purple-300 transition-colors truncate pr-4 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
-                            >
-                                <option value="Default">Standard Scientific</option>
-                                <option value="Minimalist">Minimalist</option>
-                                <option value="Realistic">Photorealistic</option>
-                                <option value="Cartoon">Graphic Novel</option>
-                                <option value="Vintage">Vintage Lithograph</option>
-                                <option value="Futuristic">Cyberpunk HUD</option>
-                                <option value="3D Render">3D Isometric</option>
-                                <option value="Sketch">Technical Blueprint</option>
-                            </select>
+                        <div className="flex flex-col w-full">
+                          <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Visual Aesthetic</label>
+                          <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value as any)} className="bg-transparent border-none text-base font-bold w-full outline-none text-slate-800 dark:text-white cursor-pointer">
+                            <option value="Default">Standard Scientific</option>
+                            <option value="Minimalist">Modern Minimalist</option>
+                            <option value="Realistic">Photorealistic 8K</option>
+                            <option value="Cartoon">Educational Graphic</option>
+                            <option value="Vintage">Scientific Lithograph</option>
+                            <option value="Futuristic">Digital HUD/Cyber</option>
+                            <option value="3D Render">Isometric 3D</option>
+                            <option value="Sketch">Technical Blueprint</option>
+                          </select>
                         </div>
                     </div>
-
-                     {/* Language Selector */}
-                     <div className="flex-1 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-200 dark:border-white/5 px-4 py-3 flex items-center gap-3 hover:border-green-500/30 transition-colors relative overflow-hidden group/item">
-                         <div className="p-2 bg-white dark:bg-slate-800 rounded-lg text-green-600 dark:text-green-400 shrink-0 shadow-sm">
-                            <Globe className="w-4 h-4" />
-                        </div>
-                        <div className="flex flex-col z-10 w-full overflow-hidden">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Language</label>
-                            <select 
-                                value={language} 
-                                onChange={(e) => setLanguage(e.target.value as any)}
-                                className="bg-transparent border-none text-base font-bold text-slate-900 dark:text-slate-100 focus:ring-0 cursor-pointer p-0 w-full hover:text-green-600 dark:hover:text-green-300 transition-colors truncate pr-4 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
-                            >
-                                <option value="English">English</option>
-                                <option value="Spanish">Spanish</option>
-                                <option value="French">French</option>
-                                <option value="German">German</option>
-                                <option value="Mandarin">Mandarin</option>
-                                <option value="Japanese">Japanese</option>
-                                <option value="Hindi">Hindi</option>
-                                <option value="Arabic">Arabic</option>
-                                <option value="Portuguese">Portuguese</option>
-                                <option value="Russian">Russian</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Generate Button */}
-                    <div className="flex flex-col gap-1 w-full md:w-auto">
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="w-full md:w-auto h-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-8 py-4 rounded-2xl font-bold font-display tracking-wide hover:brightness-110 transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] whitespace-nowrap flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-                        >
-                            <Microscope className="w-5 h-5" />
-                            <span>INITIATE</span>
-                        </button>
-                        <div className="text-center">
-                            <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider opacity-70">16:9 Format</span>
-                        </div>
-                    </div>
-
-                    </div>
+                    <button type="submit" disabled={isLoading || !topic.trim()} className={`w-full md:w-auto px-10 py-5 rounded-[1.5rem] font-bold flex items-center justify-center gap-3 shadow-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] ${!topic.trim() ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600' : 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-cyan-600/20'}`}>
+                      <span>RESEARCH & GENERATE</span>
+                      <Wand2 className="w-5 h-5" />
+                    </button>
                 </div>
             </div>
           </form>
         </div>
 
         {isLoading && <Loading status={loadingMessage} step={loadingStep} facts={loadingFacts} />}
-
-        {error && (
-          <div className="max-w-2xl mx-auto mt-8 p-6 bg-red-100 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-2xl flex items-center gap-4 text-red-800 dark:text-red-200 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4 shadow-sm">
-            <AlertCircle className="w-6 h-6 flex-shrink-0 text-red-500 dark:text-red-400" />
-            <div className="flex-1">
-                <p className="font-medium">{error}</p>
-                {(error.includes("Access denied") || error.includes("billing")) && (
-                    <button 
-                        onClick={handleSelectKey}
-                        className="mt-2 text-xs font-bold text-red-700 dark:text-red-300 underline hover:text-red-900 dark:hover:text-red-100"
-                    >
-                        Select a different API key
-                    </button>
-                )}
-            </div>
+        
+        {error && <div className="max-w-3xl mx-auto mt-12 p-8 bg-red-50 dark:bg-red-950/20 border-2 border-red-100 dark:border-red-900/30 rounded-[2rem] flex items-center gap-6 text-red-800 dark:text-red-200 animate-in shake duration-500 shadow-xl shadow-red-500/5">
+          <div className="p-4 bg-red-100 dark:bg-red-900/40 rounded-2xl">
+            <AlertCircle className="w-8 h-8 flex-shrink-0 text-red-500" />
           </div>
-        )}
+          <div>
+            <h4 className="font-bold text-lg mb-1">Heads up!</h4>
+            <p className="font-medium opacity-80 leading-relaxed">{error}</p>
+          </div>
+        </div>}
 
         {imageHistory.length > 0 && !isLoading && (
-            <>
+            <div className="animate-in slide-in-from-bottom-12 duration-1000">
                 <Infographic 
                     key={imageHistory[historyIndex].id}
                     image={imageHistory[historyIndex]} 
                     onEdit={handleEdit} 
                     onVerify={handleVerify}
+                    onAnimate={handleAnimate}
                     isEditing={isLoading}
                     onRefreshNews={handleRefreshNews}
-                    onUndo={handleUndo}
-                    onRedo={handleRedo}
-                    canUndo={historyIndex < imageHistory.length - 1}
-                    canRedo={historyIndex > 0}
                     historyIndex={historyIndex}
                     historyTotal={imageHistory.length}
                     isSaved={savedImages.some(img => img.id === imageHistory[historyIndex].id)}
                     onToggleSave={handleToggleSave}
                 />
                 <SearchResults results={currentSearchResults} />
-            </>
-        )}
-
-        {imageHistory.length > 1 && (
-            <div className="max-w-7xl mx-auto mt-16 md:mt-24 border-t border-slate-200 dark:border-white/10 pt-12 transition-colors">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-3">
-                        <History className="w-4 h-4" />
-                        Session Archives
-                    </h3>
-                    
-                    <div className="flex items-center gap-2">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                            <input 
-                                type="text" 
-                                value={historyFilter}
-                                onChange={(e) => setHistoryFilter(e.target.value)}
-                                placeholder="Filter history..." 
-                                className="pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-medium focus:ring-1 focus:ring-cyan-500 outline-none w-48 text-slate-700 dark:text-slate-300"
-                            />
-                        </div>
-                        <div className="relative">
-                            <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                            <select
-                                value={historySort}
-                                onChange={(e) => setHistorySort(e.target.value as any)}
-                                className="pl-9 pr-8 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-medium focus:ring-1 focus:ring-cyan-500 outline-none appearance-none cursor-pointer text-slate-700 dark:text-slate-300"
-                            >
-                                <option value="newest">Newest First</option>
-                                <option value="oldest">Oldest First</option>
-                                <option value="az">A-Z</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4">
-                    {processedHistory.map((img) => (
-                        <div 
-                            key={img.id} 
-                            onClick={() => restoreImage(img)}
-                            className="group relative cursor-pointer rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-cyan-500/50 hover:ring-2 hover:ring-cyan-500/20 transition-all shadow-md bg-white dark:bg-slate-900/50 backdrop-blur-sm aspect-video"
-                        >
-                            <img src={img.data} alt={img.prompt} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
-                            {/* Minimal Overlay for Thumbnails */}
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center p-2">
-                                <span className="text-[10px] text-white font-medium text-center line-clamp-2 leading-tight">
-                                    {img.prompt}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
-                    {processedHistory.length === 0 && (
-                        <div className="col-span-full text-center py-8 text-slate-500 dark:text-slate-400 text-sm">
-                            No matching archives found.
-                        </div>
-                    )}
-                </div>
             </div>
         )}
-
       </main>
     </div>
     )}
     </>
   );
 };
-
 export default App;

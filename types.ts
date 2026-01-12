@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,7 +13,8 @@ export type Language = 'English' | 'Spanish' | 'French' | 'German' | 'Mandarin' 
 
 export interface GeneratedImage {
   id: string;
-  data: string; // Base64 data URL
+  data: string; // Base64 image data URL
+  videoUri?: string; // Downloaded MP4 URL
   prompt: string;
   timestamp: number;
   level?: ComplexityLevel;
@@ -34,12 +36,18 @@ export interface VerificationResult {
 export interface SearchResultItem {
   title: string;
   url: string;
+  isMap?: boolean;
 }
 
 export interface ResearchResult {
   imagePrompt: string;
   facts: string[];
   searchResults: SearchResultItem[];
+}
+
+export interface LatLng {
+  latitude: number;
+  longitude: number;
 }
 
 declare global {

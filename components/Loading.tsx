@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useEffect, useState } from 'react';
-import { Loader2, BrainCircuit, BookOpen, Atom, Lightbulb, ScrollText, Database, Dna, Microscope, Globe, Compass } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Loader2, BrainCircuit, BookOpen, Atom, Globe, Film, Video, Zap, Activity, Sparkles } from 'lucide-react';
 
 interface LoadingProps {
   status: string;
@@ -13,148 +14,208 @@ interface LoadingProps {
 
 const Loading: React.FC<LoadingProps> = ({ status, step, facts = [] }) => {
   const [currentFactIndex, setCurrentFactIndex] = useState(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   
   useEffect(() => {
     if (facts.length > 0) {
       const interval = setInterval(() => {
         setCurrentFactIndex((prev) => (prev + 1) % facts.length);
-      }, 3500);
+      }, 4000);
       return () => clearInterval(interval);
     }
   }, [facts]);
 
-  // A mix of Icons and Text flying into the center
+  const videoMessages = [
+    "Synthesizing motion frames...",
+    "Rendering knowledge in 4D...",
+    "Harmonizing visual context with Veo AI...",
+    "Structuring cinematic flow...",
+    "Refining high-fidelity textures...",
+  ];
+  const [videoMessageIndex, setVideoMessageIndex] = useState(0);
+
+  useEffect(() => {
+    if (step === 3) {
+      const interval = setInterval(() => {
+        setVideoMessageIndex(prev => (prev + 1) % videoMessages.length);
+      }, 7000);
+      return () => clearInterval(interval);
+    }
+  }, [step]);
+
+  // Enhanced Particle Neural-Net effect
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let particles: Array<{x: number, y: number, vx: number, vy: number, r: number, color: string}> = [];
+    const resize = () => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      const count = Math.floor((canvas.width * canvas.height) / 15000) + 20;
+      particles = Array.from({ length: count }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.8,
+        vy: (Math.random() - 0.5) * 0.8,
+        r: Math.random() * 2 + 0.5,
+        color: step === 3 ? 'rgba(245, 158, 11, 0.4)' : 'rgba(6, 182, 212, 0.4)'
+      }));
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    let animationFrame: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      const connectionDist = 120;
+      
+      particles.forEach((p, i) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        
+        // Bounce
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+
+        // Draw particle
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+
+        // Draw connections
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const dist = Math.hypot(p.x - p2.x, p.y - p2.y);
+          if (dist < connectionDist) {
+            const alpha = (1 - dist / connectionDist) * 0.15;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = step === 3 ? `rgba(245, 158, 11, ${alpha})` : `rgba(6, 182, 212, ${alpha})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      });
+      animationFrame = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(animationFrame);
+    };
+  }, [step]);
+
   const FlyingItem = ({ delay, position, type, content }: { delay: number, position: number, type: 'icon' | 'text', content: any }) => {
     const startLeft = position % 2 === 0 ? '-20%' : '120%';
-    const startTop = `${(position * 7) % 100}%`;
-    
+    const startTop = `${(position * 12) % 100}%`;
     return (
-      <div 
-        className={`absolute flex items-center justify-center font-bold opacity-0 select-none ${type === 'text' ? 'text-cyan-600 dark:text-cyan-400 text-[10px] md:text-xs tracking-[0.2em] bg-white/80 dark:bg-slate-900/80 border border-cyan-500/30 px-2 py-0.5 md:px-3 md:py-1 rounded shadow-[0_0_10px_rgba(6,182,212,0.3)] backdrop-blur-sm' : 'text-amber-500 dark:text-amber-400'}`}
-        style={{
-          animation: `implode 2.5s infinite ease-in ${delay}s`,
-          top: startTop,
-          left: startLeft,
-          zIndex: 10,
-        }}
-      >
-        {type === 'icon' ? React.createElement(content, { className: "w-5 h-5 md:w-6 md:h-6 filter drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" }) : content}
+      <div className={`absolute flex items-center justify-center font-bold opacity-0 select-none ${type === 'text' ? 'text-cyan-600 dark:text-cyan-400 text-[10px] md:text-xs tracking-[0.2em] bg-white/80 dark:bg-slate-900/80 border border-cyan-500/30 px-3 py-1 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.2)] backdrop-blur-md' : 'text-amber-500 dark:text-amber-400'}`}
+        style={{ animation: `implode 3s infinite ease-in ${delay}s`, top: startTop, left: startLeft, zIndex: 10 }}>
+        {type === 'icon' ? React.createElement(content, { className: "w-5 h-5 md:w-6 md:h-6" }) : content}
       </div>
     );
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center w-full max-w-4xl mx-auto mt-8 min-h-[350px] md:min-h-[500px] overflow-hidden rounded-3xl bg-white/40 dark:bg-slate-900/40 border border-slate-200 dark:border-white/10 shadow-2xl backdrop-blur-md transition-colors">
+    <div className="relative flex flex-col items-center justify-center w-full max-w-5xl mx-auto mt-12 min-h-[400px] md:min-h-[550px] overflow-hidden rounded-[2.5rem] bg-white/50 dark:bg-slate-900/40 border border-slate-200 dark:border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] backdrop-blur-xl group">
+      <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-60" />
       
       <style>{`
         @keyframes implode {
-          0% { transform: scale(1) rotate(0deg); opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { transform: scale(0.1) rotate(360deg); opacity: 0; top: 40%; left: 50%; }
+          0% { transform: translate(0, 0) scale(1.5) rotate(0deg); opacity: 0; }
+          15% { opacity: 1; }
+          85% { opacity: 1; }
+          100% { transform: translate(calc(50vw - 50%), calc(40vh - 50%)) scale(0) rotate(720deg); opacity: 0; }
         }
-        @keyframes spin-slow {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+        @keyframes pulse-core-enhanced {
+          0% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4), 0 0 0 0 rgba(6, 182, 212, 0.1); transform: scale(1); }
+          50% { box-shadow: 0 0 0 20px rgba(6, 182, 212, 0), 0 0 0 40px rgba(6, 182, 212, 0); transform: scale(1.05); }
+          100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0), 0 0 0 0 rgba(6, 182, 212, 0); transform: scale(1); }
         }
-        @keyframes spin-reverse {
-          0% { transform: rotate(360deg); }
-          100% { transform: rotate(0deg); }
-        }
-        @keyframes pulse-core {
-          0% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); transform: scale(1); }
-          70% { box-shadow: 0 0 0 30px rgba(6, 182, 212, 0); transform: scale(1.05); }
-          100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); transform: scale(1); }
-        }
-        @keyframes gradient-pulse {
-          0% { opacity: 0.1; transform: scale(0.8); }
-          50% { opacity: 0.3; transform: scale(1.1); }
-          100% { opacity: 0.1; transform: scale(0.8); }
+        @keyframes fast-scan {
+          0% { top: -10%; opacity: 0; }
+          50% { opacity: 0.5; }
+          100% { top: 110%; opacity: 0; }
         }
       `}</style>
 
-      {/* THE REACTOR CORE */}
-      <div className="relative z-20 mb-10 md:mb-16 scale-[0.65] md:scale-125 mt-4 md:mt-10">
-        {/* Animated Background Aura */}
-        <div className="absolute inset-0 bg-cyan-500 rounded-full blur-[100px] animate-[gradient-pulse_4s_ease-in-out_infinite] z-0"></div>
+      {/* Cyber Scan Line */}
+      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        <div className="absolute w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent animate-[fast-scan_4s_linear_infinite]"></div>
+      </div>
 
-        {/* Outer Rings */}
-        <div className="absolute inset-0 w-64 h-64 -translate-x-[4.5rem] -translate-y-[4.5rem] border border-dashed border-cyan-700/30 dark:border-cyan-900/50 rounded-full animate-[spin-slow_20s_linear_infinite]"></div>
-        <div className="absolute inset-0 w-48 h-48 -translate-x-12 -translate-y-12 border-2 border-dashed border-cyan-500/20 rounded-full animate-[spin-slow_10s_linear_infinite]"></div>
-        <div className="absolute inset-0 w-40 h-40 -translate-x-8 -translate-y-8 border border-indigo-500/30 rounded-full animate-[spin-reverse_8s_linear_infinite]"></div>
-        <div className="absolute inset-0 w-56 h-56 -translate-x-[5.5rem] -translate-y-[5.5rem] border border-cyan-300/10 rounded-full animate-[spin-reverse_15s_linear_infinite]"></div>
-        
-        {/* Glowing Center */}
-        <div className="relative bg-white/50 dark:bg-white/10 p-1 rounded-full shadow-[0_0_60px_rgba(6,182,212,0.4)] animate-[pulse-core_2s_infinite]">
-           <div className="bg-white dark:bg-slate-950 p-4 rounded-full flex items-center justify-center w-24 h-24 relative overflow-hidden border border-cyan-500/50">
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 to-blue-600 opacity-10 dark:opacity-30"></div>
-              <BrainCircuit className="w-12 h-12 text-cyan-600 dark:text-cyan-300 animate-pulse relative z-10" />
-              {/* Inner beams */}
-              <div className="absolute top-0 left-1/2 w-[1px] h-full bg-cyan-400/50 animate-[spin-slow_2s_linear_infinite]"></div>
-              <div className="absolute top-1/2 left-0 h-[1px] w-full bg-cyan-400/50 animate-[spin-slow_2s_linear_infinite]"></div>
+      <div className="relative z-20 mb-12 scale-[0.7] md:scale-125">
+        <div className="absolute inset-0 bg-cyan-500 rounded-full blur-[120px] opacity-25 z-0"></div>
+        <div className="relative bg-white/40 dark:bg-white/5 p-2 rounded-full animate-[pulse-core-enhanced_3s_infinite]">
+           <div className={`bg-white dark:bg-slate-950 p-6 rounded-full flex items-center justify-center w-28 h-28 border border-white/20 shadow-inner transition-colors duration-500 ${step === 3 ? 'border-amber-500/50' : 'border-cyan-500/50'}`}>
+              {step === 3 ? (
+                <Film className="w-12 h-12 text-amber-500 animate-pulse" />
+              ) : (
+                <BrainCircuit className="w-12 h-12 text-cyan-500 animate-pulse" />
+              )}
            </div>
         </div>
-
-        {/* Flying Particles IN to the core */}
-        <div className="absolute top-1/2 left-1/2 w-[300px] md:w-[500px] h-[300px] md:h-[500px] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+        
+        {/* Swirling Bits */}
+        <div className="absolute top-1/2 left-1/2 w-[400px] h-[400px] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
            <FlyingItem content={BookOpen} type="icon" delay={0} position={1} />
-           <FlyingItem content="HISTORY" type="text" delay={0.2} position={2} />
-           <FlyingItem content={Microscope} type="icon" delay={0.5} position={3} />
-           <FlyingItem content="SCIENCE" type="text" delay={0.7} position={4} />
-           <FlyingItem content={Dna} type="icon" delay={1.0} position={5} />
-           <FlyingItem content="FACTS" type="text" delay={1.2} position={6} />
-           <FlyingItem content={Globe} type="icon" delay={1.5} position={7} />
-           <FlyingItem content="DATA" type="text" delay={1.7} position={8} />
-           <FlyingItem content={Compass} type="icon" delay={2.0} position={9} />
-           <FlyingItem content={ScrollText} type="icon" delay={2.2} position={10} />
+           <FlyingItem content="NEURAL MAPPING" type="text" delay={0.3} position={2} />
+           <FlyingItem content={step === 3 ? Video : Zap} type="icon" delay={0.6} position={3} />
+           <FlyingItem content={step === 3 ? "VEV RENDERING" : "DATA STREAM"} type="text" delay={0.9} position={4} />
+           <FlyingItem content={Activity} type="icon" delay={1.2} position={5} />
+           <FlyingItem content="CROSS-REFERENCING" type="text" delay={1.5} position={6} />
+           <FlyingItem content={Sparkles} type="icon" delay={1.8} position={7} />
+           <FlyingItem content="VISUAL GENIUS" type="text" delay={2.1} position={8} />
         </div>
       </div>
 
-      {/* Fact Display */}
-      <div className="relative z-30 w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl p-6 md:p-8 shadow-2xl border border-slate-200 dark:border-white/10 text-center flex flex-col items-center transition-all duration-500 min-h-[140px] md:min-h-[160px]">
-        
-        <div className="flex items-center gap-3 mb-4">
-            {step === 1 && <Globe className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-spin" />}
-            {step === 2 && <Atom className="w-4 h-4 text-cyan-600 dark:text-cyan-400 animate-spin" />}
-            {step >= 3 && <Microscope className="w-4 h-4 text-emerald-500 dark:text-emerald-400 animate-bounce" />}
-            <h3 className="text-cyan-700 dark:text-cyan-400 font-bold text-[10px] md:text-xs tracking-[0.2em] uppercase font-display">
-            {status}
+      <div className="relative z-30 w-full max-w-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl rounded-[2rem] p-8 md:p-10 shadow-2xl border border-slate-200 dark:border-white/10 text-center flex flex-col items-center">
+        <div className="flex items-center gap-3 mb-6">
+            <div className={`p-1.5 rounded-lg transition-colors ${step === 3 ? 'bg-amber-100 text-amber-600' : 'bg-cyan-100 text-cyan-600'}`}>
+              {step === 1 && <Globe className="w-4 h-4 animate-spin" />}
+              {step === 2 && <Atom className="w-4 h-4 animate-spin" />}
+              {step === 3 && <Film className="w-4 h-4 animate-bounce" />}
+            </div>
+            <h3 className="text-slate-500 dark:text-slate-400 font-bold text-[10px] md:text-xs tracking-[0.3em] uppercase">
+                {step === 3 ? videoMessages[videoMessageIndex] : status}
             </h3>
         </div>
-
-        <div className="flex-1 flex items-center justify-center px-4">
-            {facts.length > 0 ? (
-            <div key={currentFactIndex} className="animate-in slide-in-from-bottom-2 fade-in duration-500">
-                <p className="text-base md:text-xl text-slate-800 dark:text-slate-200 font-serif-display leading-relaxed italic">
-                "{facts[currentFactIndex]}"
-                </p>
-            </div>
+        
+        <div className="flex-1 flex items-center justify-center min-h-[80px] px-6">
+            {step === 3 ? (
+                <div className="text-slate-500 text-sm italic font-medium max-w-sm">
+                  Cinematic summary in progress. We're using Veo AI to create a documentary-style sequence. This may take up to 2 minutes...
+                </div>
+            ) : facts.length > 0 ? (
+                <div key={currentFactIndex} className="animate-in slide-in-from-bottom-4 fade-in duration-700">
+                    <p className="text-lg md:text-xl text-slate-800 dark:text-slate-100 font-serif-display leading-relaxed italic">
+                      "{facts[currentFactIndex]}"
+                    </p>
+                </div>
             ) : (
-            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-500 italic font-light text-sm md:text-base">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Establishing connection...</span>
-            </div>
+                <div className="flex flex-col items-center gap-4 text-slate-400 italic text-sm">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Synchronizing with Google Knowledge Graph...</span>
+                  </div>
+                </div>
             )}
         </div>
         
-        {/* Progress Bar */}
-        <div className="w-full h-1 bg-slate-200 dark:bg-slate-800 mt-6 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/50 mt-10 rounded-full overflow-hidden relative">
             <div 
-              className="h-full bg-gradient-to-r from-amber-400 via-cyan-500 to-emerald-500 transition-all duration-1000 ease-out relative overflow-hidden shadow-[0_0_10px_rgba(6,182,212,0.8)]"
-              style={{ width: `${step * 20 + 10}%` }}
-            >
-                <div className="absolute inset-0 bg-white/50 animate-[shimmer_1s_infinite]"></div>
-            </div>
+              className={`h-full transition-all duration-1000 ease-in-out shadow-[0_0_15px_rgba(6,182,212,0.5)] ${step === 3 ? 'bg-gradient-to-r from-amber-400 to-orange-500' : 'bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600'}`}
+              style={{ width: step === 3 ? '55%' : `${step * 33 + 10}%` }}
+            ></div>
         </div>
       </div>
-
-      <style>{`
-          @keyframes shimmer {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(100%); }
-          }
-      `}</style>
-
     </div>
   );
 };

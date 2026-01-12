@@ -1,5 +1,9 @@
 {
-  "name": "InfoGenius",
-  "description": "Using Google search grounding you are able to research topics and instantly generate verified visuals tailored to your audience.",
-  "requestFramePermissions": []
+  "name": "InfoGenius Vision",
+  "description": "Using Google search and Maps grounding you are able to research topics and instantly generate verified visuals and cinematic summaries tailored to your audience.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
 }
