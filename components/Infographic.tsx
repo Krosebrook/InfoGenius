@@ -157,21 +157,31 @@ const Infographic: React.FC<InfographicProps> = ({
                     type="text"
                     value={editPrompt}
                     onChange={(e) => setEditPrompt(e.target.value)}
-                    placeholder="Refine visual or content..."
+                    placeholder="Describe changes (e.g., 'Make background blue', 'Add labels')..."
                     className="flex-1 bg-slate-50 dark:bg-slate-900/50 sm:bg-transparent border border-slate-200 dark:border-white/10 sm:border-none rounded-xl sm:rounded-none focus:ring-0 text-slate-900 dark:text-white placeholder:text-slate-400 px-4 py-3 sm:px-2 sm:py-2 font-medium text-base transition-all focus:bg-white dark:focus:bg-slate-900 shadow-inner"
                     disabled={isEditing}
                 />
-                <button
-                    type="submit"
-                    disabled={isEditing || !editPrompt.trim()}
-                    className={`w-full sm:w-auto px-6 py-3 sm:py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
-                        isEditing || !editPrompt.trim() 
-                        ? 'bg-slate-200 dark:bg-slate-700/50 text-slate-400 dark:text-slate-500' 
-                        : 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg'
-                    }`}
-                >
-                    {isEditing ? <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></span> : <><span>Refine</span><Sparkles className="w-4 h-4" /></>}
-                </button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <button
+                        type="submit"
+                        disabled={isEditing || !editPrompt.trim()}
+                        className={`flex-1 sm:flex-none w-full sm:w-auto px-6 py-3 sm:py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
+                            isEditing || !editPrompt.trim() 
+                            ? 'bg-slate-200 dark:bg-slate-700/50 text-slate-400 dark:text-slate-500' 
+                            : 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg'
+                        }`}
+                    >
+                        {isEditing ? <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></span> : <><span>Refine</span><Sparkles className="w-4 h-4" /></>}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setShowEditControls(false)}
+                        className="px-3 py-3 sm:py-2.5 rounded-xl font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 transition-colors"
+                        title="Cancel"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
             </form>
         </div>
     </div>
