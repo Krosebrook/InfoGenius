@@ -176,7 +176,9 @@ const App: React.FC = () => {
     <>
     {!checkingKey && !hasApiKey && <KeySelectionModal />}
     <LibraryModal isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} images={savedImages} onSelect={restoreImage} onDelete={handleDeleteFromLibrary} />
-    {showTutorial && <TutorialOverlay onComplete={handleFinishTutorial} />}
+    
+    {/* Only show tutorial if intro is finished */}
+    {!showIntro && showTutorial && <TutorialOverlay onComplete={handleFinishTutorial} />}
     
     {showIntro ? <IntroScreen onComplete={() => setShowIntro(false)} /> : (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans pb-20 relative transition-colors">
@@ -191,22 +193,24 @@ const App: React.FC = () => {
             <span className="font-display font-bold text-lg md:text-2xl tracking-tight">InfoGenius <span className="text-cyan-600 dark:text-cyan-400">Vision</span></span>
           </div>
           <div className="flex items-center gap-3">
-              <button id="step-library" onClick={() => setIsLibraryOpen(true)} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-200 dark:border-amber-700/30 hover:brightness-110 transition-all">
+              <button id="step-library" onClick={() => setIsLibraryOpen(true)} className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-200 dark:border-amber-700/30 hover:brightness-110 transition-all">
                 <BookMarked className="w-4 h-4" />
-                <span>Library ({savedImages.length})</span>
+                <span className="hidden md:inline">Library ({savedImages.length})</span>
               </button>
               
               {/* Persistent Animated Theme Toggle */}
               <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl flex items-center gap-1 border border-slate-200 dark:border-white/10">
                 <button 
                   onClick={() => setIsDarkMode(false)} 
-                  className={`p-1.5 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-amber-500 shadow-sm' : 'text-slate-400'}`}
+                  aria-label="Switch to Light Mode"
+                  className={`p-1.5 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-amber-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
                   <Sun className="w-4 h-4" />
                 </button>
                 <button 
                   onClick={() => setIsDarkMode(true)} 
-                  className={`p-1.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-700 text-cyan-400 shadow-sm' : 'text-slate-500'}`}
+                  aria-label="Switch to Dark Mode"
+                  className={`p-1.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-700 text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
                 >
                   <Moon className="w-4 h-4" />
                 </button>
@@ -273,10 +277,10 @@ const App: React.FC = () => {
                         <div className="flex flex-col w-full">
                           <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Target Audience</label>
                           <select value={complexityLevel} onChange={(e) => setComplexityLevel(e.target.value as any)} className="bg-transparent border-none text-base font-bold w-full outline-none text-slate-800 dark:text-white cursor-pointer">
-                            <option value="Elementary">Elementary (Ages 6-11)</option>
-                            <option value="High School">High School (Ages 12-18)</option>
-                            <option value="College">University Student</option>
-                            <option value="Expert">Technical Expert</option>
+                            <option value="Elementary" className="bg-black text-white">Elementary (Ages 6-11)</option>
+                            <option value="High School" className="bg-black text-white">High School (Ages 12-18)</option>
+                            <option value="College" className="bg-black text-white">University Student</option>
+                            <option value="Expert" className="bg-black text-white">Technical Expert</option>
                           </select>
                         </div>
                     </div>
@@ -287,14 +291,14 @@ const App: React.FC = () => {
                         <div className="flex flex-col w-full">
                           <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Visual Aesthetic</label>
                           <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value as any)} className="bg-transparent border-none text-base font-bold w-full outline-none text-slate-800 dark:text-white cursor-pointer">
-                            <option value="Default">Standard Scientific</option>
-                            <option value="Minimalist">Modern Minimalist</option>
-                            <option value="Realistic">Photorealistic 8K</option>
-                            <option value="Cartoon">Educational Graphic</option>
-                            <option value="Vintage">Scientific Lithograph</option>
-                            <option value="Futuristic">Digital HUD/Cyber</option>
-                            <option value="3D Render">Isometric 3D</option>
-                            <option value="Sketch">Technical Blueprint</option>
+                            <option value="Default" className="bg-black text-white">Standard Scientific</option>
+                            <option value="Minimalist" className="bg-black text-white">Modern Minimalist</option>
+                            <option value="Realistic" className="bg-black text-white">Photorealistic 8K</option>
+                            <option value="Cartoon" className="bg-black text-white">Educational Graphic</option>
+                            <option value="Vintage" className="bg-black text-white">Scientific Lithograph</option>
+                            <option value="Futuristic" className="bg-black text-white">Digital HUD/Cyber</option>
+                            <option value="3D Render" className="bg-black text-white">Isometric 3D</option>
+                            <option value="Sketch" className="bg-black text-white">Technical Blueprint</option>
                           </select>
                         </div>
                     </div>

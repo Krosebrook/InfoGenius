@@ -53,7 +53,15 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete }) => {
       if (id) {
         const el = document.getElementById(id);
         if (el) {
-          setSpotlightRect(el.getBoundingClientRect());
+          const rect = el.getBoundingClientRect();
+          // Check if element is visible
+          if (rect.width > 0 && rect.height > 0) {
+              setSpotlightRect(rect);
+              // Scroll element into view
+              el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+          } else {
+              setSpotlightRect(null);
+          }
         } else {
           setSpotlightRect(null);
         }
@@ -62,9 +70,17 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete }) => {
       }
     };
 
-    updateSpotlight();
+    // Small timeout to allow for transitions or rendering
+    const timer = setTimeout(updateSpotlight, 100);
+    
     window.addEventListener('resize', updateSpotlight);
-    return () => window.removeEventListener('resize', updateSpotlight);
+    window.addEventListener('scroll', updateSpotlight, true); // Capture phase to detect all scrolling
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateSpotlight);
+      window.removeEventListener('scroll', updateSpotlight, true);
+    };
   }, [step]);
 
   const currentStep = steps[step];
@@ -79,12 +95,12 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[400] overflow-hidden animate-in fade-in duration-500">
+    <div className="fixed inset-0 z-[400] overflow-hidden animate-in fade-in duration-500 text-slate-900 dark:text-white">
       {/* Dynamic Background with Spotlight */}
-      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[4px] pointer-events-none">
+      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[4px] pointer-events-none transition-colors duration-500">
         {spotlightRect && (
           <div 
-            className="absolute bg-transparent ring-[2000px] ring-slate-950/80 rounded-2xl transition-all duration-500 ease-in-out border-2 border-cyan-500 shadow-[0_0_50px_rgba(6,182,212,0.5)]"
+            className="absolute bg-transparent ring-[2000px] ring-slate-950/80 rounded-2xl transition-all duration-500 ease-out border-2 border-cyan-500 shadow-[0_0_50px_rgba(6,182,212,0.5)]"
             style={{
               top: spotlightRect.top - 8,
               left: spotlightRect.left - 8,
@@ -95,23 +111,34 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete }) => {
         )}
       </div>
 
-      <div className="relative h-full flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden pointer-events-auto">
-          <button onClick={onComplete} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 transition-colors z-10">
+      <div className="relative h-full flex items-center justify-center p-6 pointer-events-none">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden pointer-events-auto flex flex-col relative">
+          
+          <button onClick={onComplete} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors z-10" title="Close Tutorial">
             <X className="w-6 h-6" />
           </button>
 
+           <div className="absolute top-6 left-6 z-10">
+              <span className="text-xs font-bold text-slate-300 dark:text-slate-600 uppercase tracking-widest">
+                  Step {step + 1} / {steps.length}
+              </span>
+           </div>
+
           <div className="p-10 text-center flex flex-col items-center">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-cyan-500 to-indigo-600 flex items-center justify-center text-white mb-8 shadow-2xl shadow-cyan-500/20 animate-in zoom-in duration-500">
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-cyan-500 to-indigo-600 flex items-center justify-center text-white mb-8 shadow-2xl shadow-cyan-500/20 animate-in zoom-in duration-500 key={step}">
               <currentStep.icon className="w-10 h-10" />
             </div>
 
-            <h3 className="text-3xl font-bold text-slate-900 dark:text-white mb-4 tracking-tight">{currentStep.title}</h3>
-            <p className="text-slate-600 dark:text-slate-400 mb-10 leading-relaxed text-lg">{currentStep.content}</p>
+            <h3 className="text-3xl font-bold mb-4 tracking-tight animate-in slide-in-from-bottom-2 duration-300 key={step}-title">
+                {currentStep.title}
+            </h3>
+            <p className="text-slate-600 dark:text-slate-400 mb-10 leading-relaxed text-lg animate-in slide-in-from-bottom-2 duration-300 delay-75 key={step}-desc">
+                {currentStep.content}
+            </p>
 
             <div className="flex items-center gap-2 mb-10">
               {steps.map((_, i) => (
-                <div key={i} className={`h-1.5 transition-all duration-500 rounded-full ${i === step ? 'w-10 bg-cyan-500' : 'w-2 bg-slate-200 dark:bg-slate-800'}`} />
+                <div key={i} className={`h-1.5 transition-all duration-500 rounded-full ${i === step ? 'w-10 bg-cyan-500' : 'w-2 bg-slate-200 dark:bg-slate-700'}`} />
               ))}
             </div>
 
@@ -130,19 +157,27 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete }) => {
                 {step === steps.length - 1 ? 'Start Exploring' : 'Continue'} <ChevronRight className="w-4 h-4" />
               </button>
             </div>
+            
+            {step < steps.length - 1 && (
+                <button onClick={onComplete} className="mt-6 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 uppercase tracking-widest transition-colors">
+                    Skip Tutorial
+                </button>
+            )}
           </div>
         </div>
         
         {spotlightRect && (
           <div 
-            className="absolute pointer-events-none animate-bounce flex flex-col items-center gap-2 text-cyan-400"
+            className="absolute pointer-events-none animate-bounce flex flex-col items-center gap-2 text-cyan-400 transition-all duration-500"
             style={{
                top: spotlightRect.bottom + 40,
                left: spotlightRect.left + spotlightRect.width / 2 - 12
             }}
           >
             <ArrowDown className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Focused Feature</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap bg-black/50 backdrop-blur-sm px-2 py-1 rounded-md">
+                Focused Feature
+            </span>
           </div>
         )}
       </div>
