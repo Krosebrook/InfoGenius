@@ -76,9 +76,16 @@ const Infographic: React.FC<InfographicProps> = ({
 
   const handleShare = async () => {
     setIsSharing(true);
+    
+    // Construct Unique Deep Link
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', image.originalTopic || image.prompt);
+    if (image.level) url.searchParams.set('l', image.level);
+    if (image.style) url.searchParams.set('s', image.style);
+    
+    const shareUrl = url.toString();
     const shareTitle = `Knowledge Vision: ${image.originalTopic || image.prompt}`;
     const shareText = `Check out this AI-generated visual on ${image.originalTopic || image.prompt}!`;
-    const shareUrl = window.location.href;
 
     try {
       if (navigator.share) {
@@ -95,7 +102,7 @@ const Infographic: React.FC<InfographicProps> = ({
         });
       } else {
         await navigator.clipboard.writeText(`${shareTitle}\n${shareText}\n${shareUrl}`);
-        alert("Link copied to clipboard!");
+        alert("Unique link copied to clipboard!");
       }
     } catch (e) {
       console.error("Share failed", e);
@@ -146,6 +153,7 @@ const Infographic: React.FC<InfographicProps> = ({
             </div>
             <form onSubmit={handleSubmit} className="flex-1 w-full flex flex-col sm:flex-row gap-2">
                 <input
+                    autoFocus
                     type="text"
                     value={editPrompt}
                     onChange={(e) => setEditPrompt(e.target.value)}
@@ -162,7 +170,7 @@ const Infographic: React.FC<InfographicProps> = ({
                         : 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg'
                     }`}
                 >
-                    {isEditing ? <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></span> : <><span>Enhance</span><Sparkles className="w-4 h-4" /></>}
+                    {isEditing ? <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></span> : <><span>Refine</span><Sparkles className="w-4 h-4" /></>}
                 </button>
             </form>
         </div>
@@ -249,7 +257,7 @@ const Infographic: React.FC<InfographicProps> = ({
           
           {onToggleSave && <button onClick={onToggleSave} className={`backdrop-blur-md p-3 rounded-xl shadow-lg transition-all border border-white/10 ${isSaved ? 'bg-amber-500' : 'bg-black/60'} text-white hover:bg-amber-500`}>{isSaved ? <Check className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}</button>}
           
-          <button onClick={() => setShowEditControls(!showEditControls)} className={`backdrop-blur-md text-white p-3 rounded-xl shadow-lg transition-all border border-white/10 ${showEditControls ? 'bg-cyan-600' : 'bg-black/60 hover:bg-cyan-600'}`}><Edit3 className="w-5 h-5" /></button>
+          <button onClick={() => setShowEditControls(!showEditControls)} className={`backdrop-blur-md text-white p-3 rounded-xl shadow-lg transition-all border border-white/10 ${showEditControls ? 'bg-cyan-600' : 'bg-black/60 hover:bg-cyan-600'}`} title="Refine Infographic"><Edit3 className="w-5 h-5" /></button>
           
           <button onClick={() => setIsFullscreen(true)} className="bg-black/60 backdrop-blur-md text-white p-3 rounded-xl shadow-lg hover:bg-cyan-600 border border-white/10"><Maximize2 className="w-5 h-5" /></button>
         </div>

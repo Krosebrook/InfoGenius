@@ -41,10 +41,31 @@ const App: React.FC = () => {
     isLoading, loadingMessage, loadingStep, loadingFacts, error, setError,
     imageHistory, setImageHistory, historyIndex, setHistoryIndex,
     currentSearchResults, setCurrentSearchResults,
-    handleGenerate, handleAnimate, handleEdit, handleVerify, handleRefreshNews
+    handleGenerate, handleAnimate, handleEdit, handleVerify, handleRefreshNews,
+    handleAutoGenerate
   } = useInfographicSession({
       onAuthError: () => setHasApiKey(false)
   });
+
+  // Handle Deep Linking / Shared URLs
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    
+    if (q) {
+        // Skip intro if a link is shared
+        setShowIntro(false);
+        
+        const l = (params.get('l') as any) || 'High School';
+        const s = (params.get('s') as any) || 'Default';
+        
+        // Clean URL to prevent re-triggering on refresh
+        window.history.replaceState({}, '', window.location.pathname);
+        
+        // Auto generate content
+        handleAutoGenerate(q, l, s, 'English');
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('infogenius_theme', isDarkMode ? 'dark' : 'light');
@@ -69,9 +90,11 @@ const App: React.FC = () => {
           const saved = await getAllSavedImages(); 
           setSavedImages(saved); 
           
-          // Check for tutorial completion
-          const tutorialDone = localStorage.getItem('infogenius_tutorial_done');
-          if (!tutorialDone) setShowTutorial(true);
+          // Check for tutorial completion only if not a deep link
+          if (!window.location.search.includes('q=')) {
+              const tutorialDone = localStorage.getItem('infogenius_tutorial_done');
+              if (!tutorialDone) setShowTutorial(true);
+          }
         } 
         catch (e) { console.error(e); }
     };

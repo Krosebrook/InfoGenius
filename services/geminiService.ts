@@ -12,7 +12,8 @@ const getAi = () => {
 };
 
 // Models definitions
-const TEXT_MODEL = 'gemini-3-pro-preview';
+// Maps grounding is only supported in Gemini 2.5 series models.
+const RESEARCH_MODEL = 'gemini-2.5-flash'; 
 const IMAGE_MODEL = 'gemini-3-pro-image-preview';
 const EDIT_MODEL = 'gemini-2.5-flash-image';
 const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
@@ -122,7 +123,7 @@ export const researchTopicForPrompt = async (
   try {
       const ai = getAi();
       const response = await ai.models.generateContent({
-        model: TEXT_MODEL,
+        model: RESEARCH_MODEL,
         contents: {
           parts: [{ text: systemPrompt }]
         },
@@ -270,13 +271,16 @@ export const verifyInfographicAccuracy = async (
 };
 
 export const editInfographicImage = async (currentImageBase64: string, editInstruction: string): Promise<string> => {
-  const cleanBase64 = currentImageBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+  const mimeMatch = currentImageBase64.match(/^data:(image\/[a-zA-Z]+);base64,/);
+  const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+  const cleanBase64 = currentImageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+  
   try {
       const response = await getAi().models.generateContent({
         model: EDIT_MODEL,
         contents: {
           parts: [
-             { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
+             { inlineData: { mimeType: mimeType, data: cleanBase64 } },
              { text: editInstruction }
           ]
         }

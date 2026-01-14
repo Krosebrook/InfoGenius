@@ -59,9 +59,13 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
       }
   };
 
-  const handleGenerate = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (isLoading || !topic.trim()) return;
+  const executeGeneration = async (
+    t: string, 
+    l: ComplexityLevel, 
+    v: VisualStyle, 
+    lng: Language
+  ) => {
+    if (isLoading || !t.trim()) return;
 
     setIsLoading(true);
     setError(null);
@@ -72,7 +76,7 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
 
     try {
       const location = await getUserLocation();
-      const researchResult = await researchTopicForPrompt(topic, complexityLevel, visualStyle, language, location);
+      const researchResult = await researchTopicForPrompt(t, l, v, lng, location);
       
       setLoadingFacts(researchResult.facts);
       setCurrentSearchResults(researchResult.searchResults);
@@ -85,13 +89,13 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
       const newImage: GeneratedImage = {
         id: Date.now().toString(),
         data: base64Data,
-        prompt: topic,
-        originalTopic: topic,
+        prompt: t,
+        originalTopic: t,
         facts: researchResult.facts,
         timestamp: Date.now(),
-        level: complexityLevel,
-        style: visualStyle,
-        language: language
+        level: l,
+        style: v,
+        language: lng
       };
 
       addToHistory(newImage);
@@ -101,6 +105,19 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
       setIsLoading(false);
       setLoadingStep(0);
     }
+  };
+
+  const handleGenerate = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await executeGeneration(topic, complexityLevel, visualStyle, language);
+  };
+
+  const handleAutoGenerate = async (t: string, l: ComplexityLevel, v: VisualStyle, lng: Language) => {
+      setTopic(t);
+      setComplexityLevel(l);
+      setVisualStyle(v);
+      setLanguage(lng);
+      await executeGeneration(t, l, v, lng);
   };
 
   const handleAnimate = async () => {
@@ -202,6 +219,7 @@ export const useInfographicSession = ({ onAuthError }: UseInfographicSessionProp
     isLoading, loadingMessage, loadingStep, loadingFacts, error, setError,
     imageHistory, setImageHistory, historyIndex, setHistoryIndex,
     currentSearchResults, setCurrentSearchResults,
-    handleGenerate, handleAnimate, handleEdit, handleVerify, handleRefreshNews
+    handleGenerate, handleAnimate, handleEdit, handleVerify, handleRefreshNews,
+    handleAutoGenerate
   };
 };
